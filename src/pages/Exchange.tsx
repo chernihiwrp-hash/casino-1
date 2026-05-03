@@ -5,20 +5,28 @@ import { supabase } from "@/lib/supabase";
 import type { CryptoCoin, CryptoHolding } from "@/lib/crypto-types";
 import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity } from "lucide-react";
 
-type CoinView = CryptoCoin & { history: number[] };
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type PricePoint = { price: number; ts: number }; // ts = unix ms
+type CoinView = CryptoCoin & { history: PricePoint[] };
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const HISTORY_LEN = 60;
 const TICK_MS = 2000;
 
-function genHistory(price: number, vol: number): number[] {
-  const out: number[] = [];
-  let p = price;
-  for (let i = 0; i < HISTORY_LEN; i++) {
-    p = Math.max(0.0001, p * (1 + (Math.random() - 0.5) * vol * 0.04));
-    out.push(p);
-  }
-  out[out.length - 1] = price;
-  return out;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtPrice(n: number): string {
+  if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (n >= 1) return n.toFixed(2);
+  if (n >= 0.01) return n.toFixed(4);
+  return n.toFixed(6);
+}
+
+function fmtTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function smoothPath(points: { x: number; y: number }[]): string {
@@ -39,24 +47,22 @@ function smoothPath(points: { x: number; y: number }[]): string {
   return d;
 }
 
-function historyToPoints(data: number[], w: number, h: number) {
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+function historyToPoints(data: PricePoint[], w: number, h: number) {
+  const prices = data.map((d) => d.price);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
   const range = max - min || 1;
-  return data.map((v, i) => ({
+  return data.map((d, i) => ({
     x: (i / (data.length - 1)) * w,
-    y: h - ((v - min) / range) * (h - 8) - 4,
+    y: h - ((d.price - min) / range) * (h - 8) - 4,
+    price: d.price,
+    ts: d.ts,
   }));
 }
 
-function fmtPrice(n: number): string {
-  if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-  if (n >= 1) return n.toFixed(2);
-  if (n >= 0.01) return n.toFixed(4);
-  return n.toFixed(6);
-}
+// ─── Sparkline (mini chart in list) ──────────────────────────────────────────
 
-function Sparkline({ data, up }: { data: number[]; up: boolean }) {
+function Sparkline({ data, up }: { data: PricePoint[]; up: boolean }) {
   if (data.length < 2) return null;
   const w = 120, h = 36;
   const pts = historyToPoints(data, w, h);
@@ -68,51 +74,67 @@ function Sparkline({ data, up }: { data: number[]; up: boolean }) {
   );
 }
 
-// Smooth animated BigChart using requestAnimationFrame interpolation
-function BigChart({ data, up }: { data: number[]; up: boolean }) {
+// ─── BigChart with tooltip + smooth animation ─────────────────────────────────
+
+type TooltipState = { x: number; y: number; price: number; ts: number } | null;
+
+function BigChart({ data, up }: { data: PricePoint[]; up: boolean }) {
+  const svgRef = useRef<SVGSVGElement>(null);
   const lineRef = useRef<SVGPathElement>(null);
   const areaRef = useRef<SVGPathElement>(null);
-  const fromPtsRef = useRef<{ x: number; y: number }[]>([]);
-  const toPtsRef = useRef<{ x: number; y: number }[]>([]);
+  const crossXRef = useRef<SVGLineElement>(null);
+  const crossYRef = useRef<SVGLineElement>(null);
+  const dotRef = useRef<SVGCircleElement>(null);
+
+  const fromPtsRef = useRef<{ x: number; y: number; price: number; ts: number }[]>([]);
+  const toPtsRef = useRef<{ x: number; y: number; price: number; ts: number }[]>([]);
   const rafRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const ANIM_MS = 700;
-  const w = 600, h = 160;
+  const W = 600, H = 160;
+
+  const [tooltip, setTooltip] = useState<TooltipState>(null);
+  const currentPtsRef = useRef<{ x: number; y: number; price: number; ts: number }[]>([]);
+
+  const color = up ? "var(--primary)" : "var(--destructive)";
 
   const ease = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-  const lerpPts = (a: { x: number; y: number }[], b: { x: number; y: number }[], t: number) => {
+  const lerpPts = (
+    a: { x: number; y: number; price: number; ts: number }[],
+    b: { x: number; y: number; price: number; ts: number }[],
+    t: number
+  ) => {
     const len = Math.min(a.length, b.length);
     return Array.from({ length: len }, (_, i) => ({
       x: a[i].x + (b[i].x - a[i].x) * t,
       y: a[i].y + (b[i].y - a[i].y) * t,
+      price: a[i].price + (b[i].price - a[i].price) * t,
+      ts: b[i].ts,
     }));
   };
 
   const applyPts = (pts: { x: number; y: number }[]) => {
     const linePath = smoothPath(pts);
-    const areaPath = `${linePath} L ${w} ${h} L 0 ${h} Z`;
+    const areaPath = `${linePath} L ${W} ${H} L 0 ${H} Z`;
     if (lineRef.current) lineRef.current.setAttribute("d", linePath);
     if (areaRef.current) areaRef.current.setAttribute("d", areaPath);
   };
 
   useEffect(() => {
     if (data.length < 2) return;
-    const newPts = historyToPoints(data, w, h);
+    const newPts = historyToPoints(data, W, H);
 
     if (fromPtsRef.current.length === 0) {
       fromPtsRef.current = newPts;
       toPtsRef.current = newPts;
+      currentPtsRef.current = newPts;
       applyPts(newPts);
       return;
     }
 
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
+    if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
 
-    // Snapshot current interpolated position as new start
     if (startTimeRef.current !== null) {
       const elapsed = performance.now() - startTimeRef.current;
       const t = ease(Math.min(elapsed / ANIM_MS, 1));
@@ -126,36 +148,126 @@ function BigChart({ data, up }: { data: number[]; up: boolean }) {
     const animate = (now: number) => {
       const elapsed = now - (startTimeRef.current ?? now);
       const t = ease(Math.min(elapsed / ANIM_MS, 1));
-      applyPts(lerpPts(fromPtsRef.current, toPtsRef.current, t));
+      const mid = lerpPts(fromPtsRef.current, toPtsRef.current, t);
+      currentPtsRef.current = mid;
+      applyPts(mid);
       if (t < 1) {
         rafRef.current = requestAnimationFrame(animate);
       } else {
         fromPtsRef.current = toPtsRef.current;
+        currentPtsRef.current = toPtsRef.current;
         startTimeRef.current = null;
         rafRef.current = null;
       }
     };
     rafRef.current = requestAnimationFrame(animate);
-
     return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Mouse/touch crosshair
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top) * scaleY;
+
+    const pts = currentPtsRef.current;
+    if (pts.length < 2) return;
+
+    // Find nearest point by x
+    let nearest = pts[0];
+    let minDist = Math.abs(pts[0].x - mx);
+    for (const p of pts) {
+      const d = Math.abs(p.x - mx);
+      if (d < minDist) { minDist = d; nearest = p; }
+    }
+
+    // Update crosshair elements directly (no re-render)
+    if (crossXRef.current) {
+      crossXRef.current.setAttribute("x1", String(nearest.x));
+      crossXRef.current.setAttribute("x2", String(nearest.x));
+      crossXRef.current.setAttribute("y1", "0");
+      crossXRef.current.setAttribute("y2", String(H));
+      crossXRef.current.style.opacity = "1";
+    }
+    if (crossYRef.current) {
+      crossYRef.current.setAttribute("x1", "0");
+      crossYRef.current.setAttribute("x2", String(W));
+      crossYRef.current.setAttribute("y1", String(nearest.y));
+      crossYRef.current.setAttribute("y2", String(nearest.y));
+      crossYRef.current.style.opacity = "1";
+    }
+    if (dotRef.current) {
+      dotRef.current.setAttribute("cx", String(nearest.x));
+      dotRef.current.setAttribute("cy", String(nearest.y));
+      dotRef.current.style.opacity = "1";
+    }
+
+    // Tooltip position (convert back to screen %)
+    const tooltipX = (nearest.x / W) * rect.width + rect.left;
+    const tooltipY = (nearest.y / H) * rect.height + rect.top;
+    setTooltip({ x: tooltipX, y: tooltipY, price: nearest.price, ts: nearest.ts });
+    void my;
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (crossXRef.current) crossXRef.current.style.opacity = "0";
+    if (crossYRef.current) crossYRef.current.style.opacity = "0";
+    if (dotRef.current) dotRef.current.style.opacity = "0";
+    setTooltip(null);
+  }, []);
+
   if (data.length < 2) return null;
-  const color = up ? "var(--primary)" : "var(--destructive)";
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-full w-full">
-      <defs>
-        <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path ref={areaRef} fill="url(#cg)" />
-      <path ref={lineRef} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
+    <div className="relative h-full w-full">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="h-full w-full cursor-crosshair"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
+        <defs>
+          <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path ref={areaRef} fill="url(#cg)" />
+        <path ref={lineRef} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {/* Crosshair lines */}
+        <line ref={crossXRef} stroke={color} strokeWidth="1" strokeDasharray="4 3" opacity="0" style={{ transition: "opacity 0.1s" }} />
+        <line ref={crossYRef} stroke={color} strokeWidth="1" strokeDasharray="4 3" opacity="0" style={{ transition: "opacity 0.1s" }} />
+        {/* Hover dot */}
+        <circle ref={dotRef} r="4" fill={color} stroke="var(--background)" strokeWidth="2" opacity="0" style={{ transition: "opacity 0.1s" }} />
+      </svg>
+
+      {/* Tooltip box */}
+      {tooltip && (
+        <div
+          className="pointer-events-none fixed z-50 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur-sm"
+          style={{
+            left: tooltip.x + 14,
+            top: tooltip.y - 38,
+            transform: tooltip.x > window.innerWidth - 180 ? "translateX(-110%)" : undefined,
+          }}
+        >
+          <div className="font-mono text-sm font-bold" style={{ color }}>
+            ${fmtPrice(tooltip.price)}
+          </div>
+          <div className="text-[10px] text-muted-foreground">{fmtTime(tooltip.ts)}</div>
+        </div>
+      )}
+    </div>
   );
 }
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ExchangePage() {
   const { user, updateBalance } = useAuth();
@@ -171,34 +283,69 @@ export default function ExchangePage() {
   const coinsRef = useRef<CoinView[]>([]);
   const tickRef = useRef<number | null>(null);
 
-  // Keep ref in sync for use inside intervals
   useEffect(() => { coinsRef.current = coins; }, [coins]);
 
-  // Load initial coins
+  // ── Load coins + persistent history from Supabase ───────────────────────────
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase
+      const { data: coinData } = await supabase
         .from("crypto_coins")
         .select("*")
         .eq("active", true)
         .order("market_cap", { ascending: false });
-      const list = (data ?? []) as CryptoCoin[];
-      setCoins(list.map((c) => ({ ...c, history: genHistory(c.price, c.volatility || 1) })));
+      const list = (coinData ?? []) as CryptoCoin[];
+
+      // Load price history for all coins
+      const { data: histData } = await supabase
+        .from("crypto_price_history")
+        .select("coin_id, price, recorded_at")
+        .in("coin_id", list.map((c) => c.id))
+        .order("recorded_at", { ascending: true });
+
+      const histMap: Record<string, PricePoint[]> = {};
+      for (const row of (histData ?? []) as { coin_id: string; price: number; recorded_at: string }[]) {
+        if (!histMap[row.coin_id]) histMap[row.coin_id] = [];
+        histMap[row.coin_id].push({ price: row.price, ts: new Date(row.recorded_at).getTime() });
+      }
+
+      const now = Date.now();
+      const coinsWithHistory = list.map((c) => {
+        const h = histMap[c.id];
+        if (h && h.length >= 2) {
+          // Trim to last HISTORY_LEN points, ensure current price at end
+          const trimmed = h.slice(-HISTORY_LEN);
+          trimmed[trimmed.length - 1] = { price: c.price, ts: now };
+          return { ...c, history: trimmed };
+        }
+        // Generate synthetic history if none stored yet
+        const synthetic: PricePoint[] = [];
+        let p = c.price;
+        for (let i = HISTORY_LEN - 1; i >= 0; i--) {
+          p = Math.max(0.0001, p / (1 + (Math.random() - 0.5) * (c.volatility || 1) * 0.03));
+          synthetic.unshift({ price: p, ts: now - i * TICK_MS });
+        }
+        synthetic[synthetic.length - 1] = { price: c.price, ts: now };
+        return { ...c, history: synthetic };
+      });
+
+      setCoins(coinsWithHistory);
       setSelectedId((prev) => prev ?? (list[0]?.id ?? null));
     };
     init();
   }, []);
 
-  // Supabase Realtime: receive global price pushes
+  // ── Supabase Realtime: receive global price pushes ─────────────────────────
   useEffect(() => {
     const channel = supabase
-      .channel("crypto_prices_v2")
+      .channel("crypto_prices_v3")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crypto_coins" }, (payload) => {
         const updated = payload.new as CryptoCoin;
+        const now = Date.now();
         setCoins((prev) =>
           prev.map((c) => {
             if (c.id !== updated.id) return c;
-            return { ...c, price: updated.price, change_24h: updated.change_24h, history: [...c.history.slice(1), updated.price] };
+            const newHistory = [...c.history.slice(-(HISTORY_LEN - 1)), { price: updated.price, ts: now }];
+            return { ...c, price: updated.price, change_24h: updated.change_24h, history: newHistory };
           }),
         );
       })
@@ -206,9 +353,9 @@ export default function ExchangePage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Leader election via localStorage heartbeat
+  // ── Leader election ────────────────────────────────────────────────────────
   useEffect(() => {
-    const KEY = "exch_leader_ts";
+    const KEY = "exch_leader_ts_v2";
     const HB = 1500;
     const TIMEOUT = 4000;
 
@@ -219,45 +366,62 @@ export default function ExchangePage() {
         localStorage.setItem(KEY, String(Date.now()));
       }
     };
-
     tryLead();
     const hb = setInterval(() => {
       if (isLeaderRef.current) localStorage.setItem(KEY, String(Date.now()));
       else tryLead();
     }, HB);
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === KEY) isLeaderRef.current = false;
-    };
+    const onStorage = (e: StorageEvent) => { if (e.key === KEY) isLeaderRef.current = false; };
     window.addEventListener("storage", onStorage);
     return () => { clearInterval(hb); window.removeEventListener("storage", onStorage); };
   }, []);
 
-  // Leader ticker: push prices to Supabase so all tabs stay in sync
+  // ── Leader ticker: update prices in DB + save history ──────────────────────
   useEffect(() => {
     if (coins.length === 0) return;
     tickRef.current = window.setInterval(async () => {
       if (!isLeaderRef.current) return;
       const current = coinsRef.current;
-      const toUpdate = current.filter(() => Math.random() < 0.5);
+      const toUpdate = current.filter(() => Math.random() < 0.6);
+      const now = new Date().toISOString();
+
       for (const c of toUpdate) {
         const change = (Math.random() - 0.49) * (c.volatility || 1) * 0.006;
         const newPrice = Math.max(0.0001, c.price * (1 + change));
         const newChange = c.change_24h + change * 100 * 0.05;
-        await supabase.from("crypto_coins").update({ price: newPrice, change_24h: newChange }).eq("id", c.id);
+
+        // Update coin price
+        await supabase.from("crypto_coins")
+          .update({ price: newPrice, change_24h: newChange })
+          .eq("id", c.id);
+
+        // Persist price to history table
+        await supabase.from("crypto_price_history")
+          .insert({ coin_id: c.id, price: newPrice, recorded_at: now });
+
+        // Keep history table clean: delete rows older than ~3 minutes (90 points)
+        // Only do this 10% of the time to avoid too many deletes
+        if (Math.random() < 0.1) {
+          const cutoff = new Date(Date.now() - 180000).toISOString();
+          await supabase.from("crypto_price_history")
+            .delete()
+            .eq("coin_id", c.id)
+            .lt("recorded_at", cutoff);
+        }
       }
     }, TICK_MS);
     return () => { if (tickRef.current) clearInterval(tickRef.current); };
   }, [coins.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Holdings ────────────────────────────────────────────────────────────────
   const loadHoldings = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase.from("crypto_holdings").select("*").eq("username", user.username);
     setHoldings((data ?? []) as CryptoHolding[]);
   }, [user]);
-
   useEffect(() => { loadHoldings(); }, [loadHoldings]);
 
+  // ── Derived ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return coins;
@@ -266,7 +430,6 @@ export default function ExchangePage() {
 
   const selected = useMemo(() => coins.find((c) => c.id === selectedId) ?? null, [coins, selectedId]);
   const holding = useMemo(() => holdings.find((h) => h.coin_id === selectedId) ?? null, [holdings, selectedId]);
-
   const portfolioValue = useMemo(() => {
     return holdings.reduce((sum, h) => {
       const c = coins.find((x) => x.id === h.coin_id);
@@ -274,6 +437,7 @@ export default function ExchangePage() {
     }, 0);
   }, [holdings, coins]);
 
+  // ── Trade (fixed sell logic) ─────────────────────────────────────────────────
   const trade = async () => {
     if (!user || !selected || busy) return;
     const cr = Number(amountCr);
@@ -297,36 +461,44 @@ export default function ExchangePage() {
           });
           if (error) throw new Error(error.message);
         }
-        setMsg(`Куплено ${coinAmount.toFixed(6)} ${selected.symbol}`);
+        setMsg(`✅ Куплено ${coinAmount.toFixed(6)} ${selected.symbol}`);
       } else {
+        // SELL: cr is the CR amount the user wants to receive
         if (!holding || holding.amount <= 0) throw new Error("Немає монет для продажу");
-        const coinAmount = cr / selected.price;
-        if (coinAmount > holding.amount) throw new Error("Недостатньо монет");
+        const coinAmount = cr / selected.price; // how many coins to sell for that CR amount
+        if (coinAmount > holding.amount + 1e-9) throw new Error(`Недостатньо монет. В тебе: ${(holding.amount * selected.price).toFixed(2)} CR`);
+        // Receive CR
         await updateBalance(+cr);
         const newAmount = holding.amount - coinAmount;
         if (newAmount < 1e-9) {
-          await supabase.from("crypto_holdings").delete().eq("id", holding.id);
+          const { error } = await supabase.from("crypto_holdings").delete().eq("id", holding.id);
+          if (error) throw new Error(error.message);
         } else {
-          await supabase.from("crypto_holdings")
+          const { error } = await supabase.from("crypto_holdings")
             .update({ amount: newAmount, updated_at: new Date().toISOString() })
             .eq("id", holding.id);
+          if (error) throw new Error(error.message);
         }
-        setMsg(`Продано ${coinAmount.toFixed(6)} ${selected.symbol}`);
+        setMsg(`✅ Продано ${coinAmount.toFixed(6)} ${selected.symbol}`);
       }
       setAmountCr("");
       await loadHoldings();
     } catch (e: unknown) {
-      setMsg((e as Error)?.message || "Помилка");
+      setMsg(`❌ ${(e as Error)?.message || "Помилка"}`);
     } finally {
       setBusy(false);
     }
   };
 
+  // ── UI ──────────────────────────────────────────────────────────────────────
   return (
     <div>
       <PageHeader title="Крипто Біржа" subtitle="Купуй та продавай монети у реальному часі" />
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+
+        {/* LEFT */}
         <div className="space-y-4">
+          {/* Wallet summary */}
           <div className="glass-strong grid grid-cols-2 gap-3 rounded-2xl p-4 sm:grid-cols-3">
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Баланс</div>
@@ -344,6 +516,7 @@ export default function ExchangePage() {
             </div>
           </div>
 
+          {/* Chart */}
           {selected && (
             <div className="glass-strong rounded-2xl p-4">
               <div className="flex items-center gap-3">
@@ -360,19 +533,21 @@ export default function ExchangePage() {
                   {selected.change_24h >= 0 ? "+" : ""}{selected.change_24h.toFixed(2)}%
                 </div>
               </div>
-              <div className="mt-3 h-40 w-full overflow-hidden rounded-xl border border-border bg-black/30">
+              <div className="mt-3 h-44 w-full overflow-visible rounded-xl border border-border bg-black/30">
                 <BigChart data={selected.history} up={selected.change_24h >= 0} />
               </div>
             </div>
           )}
 
+          {/* Market list */}
           <div className="glass-strong rounded-2xl p-3">
             <div className="mb-3 flex items-center gap-2 px-1">
               <Activity className="h-4 w-4 text-primary" />
               <div className="text-sm font-semibold">Маркет</div>
               <div className="ml-auto flex items-center gap-2 rounded-xl bg-input px-3 py-1.5">
                 <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Пошук..." className="w-32 bg-transparent text-xs outline-none sm:w-48" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Пошук..."
+                  className="w-32 bg-transparent text-xs outline-none sm:w-48" />
               </div>
             </div>
             <div className="overflow-hidden rounded-xl">
@@ -403,6 +578,7 @@ export default function ExchangePage() {
           </div>
         </div>
 
+        {/* RIGHT: trade panel */}
         <div className="space-y-4">
           <div className="glass-strong rounded-2xl p-4">
             <div className="mb-3 flex gap-2">
@@ -417,6 +593,7 @@ export default function ExchangePage() {
                 </button>
               ))}
             </div>
+
             {selected ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 rounded-xl bg-input p-3">
@@ -427,35 +604,48 @@ export default function ExchangePage() {
                   </div>
                   <div className="font-mono text-sm">${fmtPrice(selected.price)}</div>
                 </div>
+
                 <div>
                   <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
                     <span>Сума (CR)</span>
                     {side === "sell" && holding && (
-                      <button className="text-primary" onClick={() => setAmountCr(String((holding.amount * selected.price).toFixed(2)))}>MAX</button>
+                      <button className="text-primary hover:underline" onClick={() => setAmountCr((holding.amount * selected.price).toFixed(2))}>
+                        MAX ({(holding.amount * selected.price).toFixed(0)} CR)
+                      </button>
                     )}
                     {side === "buy" && (
-                      <button className="text-primary" onClick={() => setAmountCr(String(user?.balance ?? 0))}>MAX</button>
+                      <button className="text-primary hover:underline" onClick={() => setAmountCr(String(Math.floor(user?.balance ?? 0)))}>
+                        MAX ({Math.floor(user?.balance ?? 0)} CR)
+                      </button>
                     )}
                   </div>
                   <input type="number" value={amountCr} onChange={(e) => setAmountCr(e.target.value)} placeholder="0.00"
                     className="w-full rounded-xl bg-input px-4 py-3 font-mono text-lg outline-none focus:ring-2 focus:ring-ring" />
                   <div className="mt-1.5 flex justify-between text-[11px] text-muted-foreground">
                     <span>≈ {amountCr ? (Number(amountCr) / selected.price).toFixed(6) : "0"} {selected.symbol}</span>
-                    {holding && <span>В тебе: {holding.amount.toFixed(6)}</span>}
+                    {holding && (
+                      <span>В тебе: {holding.amount.toFixed(6)} ({(holding.amount * selected.price).toFixed(2)} CR)</span>
+                    )}
                   </div>
                 </div>
+
                 <button onClick={trade} disabled={busy}
                   className="btn-primary flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold disabled:opacity-50">
                   <ArrowDownUp className="h-4 w-4" />
                   {busy ? "..." : side === "buy" ? "Купити" : "Продати"}
                 </button>
-                {msg && <div className="rounded-xl bg-secondary/40 px-3 py-2 text-center text-xs">{msg}</div>}
+                {msg && (
+                  <div className={`rounded-xl px-3 py-2 text-center text-xs ${msg.startsWith("✅") ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"}`}>
+                    {msg}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center text-sm text-muted-foreground">Оберіть монету</div>
             )}
           </div>
 
+          {/* Portfolio */}
           <div className="glass-strong rounded-2xl p-4">
             <div className="mb-3 flex items-center gap-2">
               <Wallet className="h-4 w-4 text-primary" />
@@ -480,7 +670,7 @@ export default function ExchangePage() {
                         <div className="font-mono text-[10px] text-muted-foreground">{h.amount.toFixed(6)} {c.symbol}</div>
                       </div>
                       <div className="text-right">
-                        <div className="font-mono text-xs">${value.toFixed(2)}</div>
+                        <div className="font-mono text-xs">{value.toFixed(2)} CR</div>
                         <div className={`font-mono text-[10px] ${pl >= 0 ? "text-primary" : "text-destructive"}`}>
                           {pl >= 0 ? "+" : ""}{plPct.toFixed(1)}%
                         </div>

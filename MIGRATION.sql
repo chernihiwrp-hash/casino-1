@@ -35,3 +35,21 @@ drop policy if exists "hold read"  on public.crypto_holdings;
 drop policy if exists "hold write" on public.crypto_holdings;
 create policy "hold read"  on public.crypto_holdings for select using (true);
 create policy "hold write" on public.crypto_holdings for all    using (true) with check (true);
+
+-- Price history table (persistent chart data)
+create table if not exists public.crypto_price_history (
+  id          bigserial primary key,
+  coin_id     uuid not null references public.crypto_coins(id) on delete cascade,
+  price       numeric not null,
+  recorded_at timestamptz not null default now()
+);
+
+create index if not exists idx_price_history_coin_time
+  on public.crypto_price_history (coin_id, recorded_at desc);
+
+alter table public.crypto_price_history enable row level security;
+
+drop policy if exists "hist read"  on public.crypto_price_history;
+drop policy if exists "hist write" on public.crypto_price_history;
+create policy "hist read"  on public.crypto_price_history for select using (true);
+create policy "hist write" on public.crypto_price_history for all    using (true) with check (true);
