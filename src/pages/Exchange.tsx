@@ -18,17 +18,35 @@ function genHistory(price: number, vol: number): number[] {
   return out;
 }
 
+function smoothPath(points: { x: number; y: number }[]): string {
+  if (points.length < 2) return "";
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? p2;
+    const t = 0.18;
+    const c1x = p1.x + (p2.x - p0.x) * t;
+    const c1y = p1.y + (p2.y - p0.y) * t;
+    const c2x = p2.x - (p3.x - p1.x) * t;
+    const c2y = p2.y - (p3.y - p1.y) * t;
+    d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
 function Sparkline({ data, up }: { data: number[]; up: boolean }) {
   if (data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
   const w = 120, h = 36;
-  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(" ");
+  const pts = data.map((v, i) => ({ x: (i / (data.length - 1)) * w, y: h - ((v - min) / range) * h }));
   const color = up ? "var(--primary)" : "var(--destructive)";
   return (
     <svg width={w} height={h} className="overflow-visible">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={smoothPath(pts)} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -80,13 +98,13 @@ export default function ExchangePage() {
     tickRef.current = window.setInterval(() => {
       setCoins((prev) =>
         prev.map((c) => {
-          const change = (Math.random() - 0.5) * c.volatility * 0.012;
+          const change = (Math.random() - 0.5) * c.volatility * 0.006;
           const next = Math.max(0.0001, c.price * (1 + change));
           const h = [...c.history.slice(1), next];
           return { ...c, price: next, change_24h: c.change_24h + change * 100 * 0.05, history: h };
         }),
       );
-    }, 1500);
+    }, 2000);
     return () => { if (tickRef.current) clearInterval(tickRef.current); };
   }, [coins.length]);
 
@@ -261,7 +279,7 @@ export default function ExchangePage() {
             <div className="mb-3 flex gap-2">
               <button
                 onClick={() => setSide("buy")}
-                className="flex-1 rounded-xl py-2 text-sm font-semibold transition"
+                className="flex-1 rounded-xl py-2 text-sm font-semibold transition-all"
                 style={{
                   background: side === "buy" ? "var(--gradient-primary)" : "transparent",
                   color: side === "buy" ? "var(--primary-foreground)" : "var(--muted-foreground)",
@@ -270,10 +288,11 @@ export default function ExchangePage() {
               >Купити</button>
               <button
                 onClick={() => setSide("sell")}
-                className="flex-1 rounded-xl py-2 text-sm font-semibold transition"
+                className="flex-1 rounded-xl py-2 text-sm font-semibold transition-all"
                 style={{
-                  background: side === "sell" ? "linear-gradient(135deg, oklch(0.65 0.24 25), oklch(0.55 0.22 20))" : "transparent",
+                  background: side === "sell" ? "var(--gradient-primary)" : "transparent",
                   color: side === "sell" ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                  boxShadow: side === "sell" ? "var(--shadow-glow)" : "none",
                 }}
               >Продати</button>
             </div>
@@ -316,7 +335,6 @@ export default function ExchangePage() {
                   onClick={trade}
                   disabled={busy}
                   className="btn-primary flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold disabled:opacity-50"
-                  style={side === "sell" ? { background: "linear-gradient(135deg, oklch(0.65 0.24 25), oklch(0.55 0.22 20))" } : undefined}
                 >
                   <ArrowDownUp className="h-4 w-4" />
                   {busy ? "..." : side === "buy" ? "Купити" : "Продати"}
@@ -379,7 +397,12 @@ function BigChart({ data, up }: { data: number[]; up: boolean }) {
   const max = Math.max(...data);
   const range = max - min || 1;
   const w = 600, h = 160;
-  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * (h - 8) - 4}`).join(" ");
+  const pts = data.map((v, i) => ({
+    x: (i / (data.length - 1)) * w,
+    y: h - ((v - min) / range) * (h - 8) - 4,
+  }));
+  const linePath = smoothPath(pts);
+  const areaPath = `${linePath} L ${w} ${h} L 0 ${h} Z`;
   const color = up ? "var(--primary)" : "var(--destructive)";
   return (
     <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-full w-full">
@@ -389,8 +412,8 @@ function BigChart({ data, up }: { data: number[]; up: boolean }) {
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <polygon points={`0,${h} ${pts} ${w},${h}`} fill="url(#cg)" />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <path d={areaPath} fill="url(#cg)" style={{ transition: "d 0.6s ease-out" }} />
+      <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" style={{ transition: "d 0.6s ease-out" }} />
     </svg>
   );
 }
