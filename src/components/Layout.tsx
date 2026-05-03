@@ -15,6 +15,7 @@ const NAV = [
   { to: "/upgrader",  label: "Апгрейд",  icon: Sparkles },
   { to: "/exchange",  label: "Біржа",    icon: Coins },
   { to: "/inventory", label: "Інвентар", icon: Wallet },
+  { to: "/promo",     label: "Промо",    icon: Ticket },
 ];
 
 export function Layout() {
@@ -98,7 +99,7 @@ export function Layout() {
 
       {user && (
         <nav className="fixed bottom-4 left-1/2 z-30 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2">
-          <div className="glass-strong flex items-center justify-around rounded-2xl px-2 py-2">
+          <div className="glass-strong flex items-center rounded-2xl px-2 py-2 overflow-x-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             {NAV.map((item) => {
               const Icon = item.icon;
               const active = loc.pathname.startsWith(item.to);
@@ -106,7 +107,7 @@ export function Layout() {
               return (
                 <Link key={item.to} to={item.to}
                   onClick={(e) => handleNav(e, item.to)}
-                  className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2 transition ${
+                  className={`flex shrink-0 flex-col items-center gap-0.5 rounded-xl px-3 py-2 transition sm:flex-1 ${
                     active ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
                   } ${disabled ? "opacity-40" : ""}`}>
                   {disabled ? <Lock className="h-5 w-5" /> : <Icon className="h-5 w-5" />}

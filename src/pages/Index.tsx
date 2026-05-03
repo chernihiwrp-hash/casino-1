@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { Rocket, Dices, CircleDot, Package, Sparkles, Wallet, ArrowRight, Shield, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { Rocket, Dices, CircleDot, Package, Sparkles, Wallet, ArrowRight, Shield, ChevronLeft, ChevronRight, ExternalLink, Ticket } from "lucide-react";
 import { useEffect, useState, useCallback, useRef } from "react";
 
 const TILES = [
@@ -11,6 +11,7 @@ const TILES = [
   { to: "/cases",     title: "NFT Кейси",    desc: "500 CR за дроп",        icon: Package },
   { to: "/upgrader",  title: "NFT Апгрейд",  desc: "Прокачай свій NFT",     icon: Sparkles },
   { to: "/inventory", title: "Інвентар",     desc: "Твоя колекція",         icon: Wallet },
+  { to: "/promo",     title: "Промокоди",    desc: "Активуй бонуси",        icon: Ticket },
 ];
 
 type Banner = {
