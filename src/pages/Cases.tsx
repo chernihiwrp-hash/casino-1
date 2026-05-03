@@ -1,10 +1,11 @@
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { RequireAuth, PageHeader } from "@/components/RequireAuth";
 import { useNftPool, pickWeightedNft, giveNftToUser } from "@/lib/nft";
 import { Package, Sparkles } from "lucide-react";
 import type { NftGift } from "@/lib/supabase";
+import { setNavLocked } from "@/lib/lock";
 
 
 const CASE_PRICE = 500;
@@ -14,13 +15,10 @@ function CasesPage() {
   const { pool, loading } = useNftPool();
   const [opening, setOpening] = useState(false);
   const [reel, setReel] = useState<NftGift[]>([]);
-  const [reelOffset, setReelOffset] = useState("translateX(0)");
-  const [animateReel, setAnimateReel] = useState(false);
   const [won, setWon] = useState<NftGift | null>(null);
   const [msg, setMsg] = useState("");
-
-  // FIX BUG 3: use a key to force reel DOM remount so CSS transition always fires
-  const [reelKey, setReelKey] = useState(0);
+  const reelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => () => setNavLocked(false), []);
 
   const openCase = async () => {
     if (!user || opening || pool.length === 0) return;
@@ -37,27 +35,30 @@ function CasesPage() {
     const items: NftGift[] = Array.from({ length: 40 }, () => pool[Math.floor(Math.random() * pool.length)]);
     items[winnerIndex] = winner;
 
-    // FIX: bump the key so React destroys & recreates the reel div,
-    // which guarantees the browser sees a fresh element at startOffset
-    // and then animates to endOffset — works every single time.
-    setReelKey((k) => k + 1);
     setReel(items);
-    setAnimateReel(false);
-    setReelOffset(startOffset);
     setOpening(true);
+    setNavLocked(true);
 
-    // Give React one frame to mount the new reel at startOffset, then animate
+    // Animate via WAAPI on next paint, after reel children are mounted
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        setAnimateReel(true);
-        setReelOffset(endOffset);
+        const el = reelRef.current;
+        if (el) {
+          el.getAnimations().forEach((a) => a.cancel());
+          el.style.transform = startOffset;
+          const anim = el.animate(
+            [{ transform: startOffset }, { transform: endOffset }],
+            { duration: 4300, easing: "cubic-bezier(0.15, 0.9, 0.25, 1)", fill: "forwards" },
+          );
+          anim.addEventListener("finish", () => { el.style.transform = endOffset; });
+        }
       });
     });
 
     setTimeout(async () => {
       setWon(winner);
       setOpening(false);
-      setAnimateReel(false);
+      setNavLocked(false);
       try {
         await giveNftToUser(user.username, winner.id);
         setMsg(`Отримано: ${winner.name} (${winner.price} CR)`);
@@ -76,14 +77,7 @@ function CasesPage() {
         <div className="relative mx-auto h-32 w-full overflow-hidden rounded-2xl border border-border bg-black/40">
           <div className="pointer-events-none absolute left-1/2 top-0 z-10 h-full w-1 -translate-x-1/2 bg-primary shadow-[0_0_20px_var(--primary)]" />
           {reel.length > 0 ? (
-            <div
-              key={reelKey}
-              className="flex h-full"
-              style={{
-                transform: reelOffset,
-                transition: animateReel ? "transform 4.3s cubic-bezier(0.15, 0.9, 0.25, 1)" : "none",
-              }}
-            >
+            <div ref={reelRef} className="flex h-full" style={{ transform: "translateX(0)" }}>
               {reel.map((n, i) => (
                 <div key={i} className="flex h-full w-32 shrink-0 flex-col items-center justify-center gap-1 border-r border-border/40 p-2">
                   <img src={n.image_url} alt={n.name} className="h-16 w-16 rounded-lg object-cover" loading="lazy" />

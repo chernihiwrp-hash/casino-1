@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Shield, Users, Megaphone, Plus, Trash2, Save, X,
   Crown, User, AlertTriangle, CheckCircle, Ban, Search, RefreshCw, Image, Gift,
-  ToggleLeft, ToggleRight, Eye, EyeOff, Ticket, Hash, Clock, Tag
+  ToggleLeft, ToggleRight, Eye, EyeOff, Ticket, Hash, Clock, Tag, Coins, TrendingUp
 } from "lucide-react";
 
 function AdminGuard() {
@@ -44,7 +44,7 @@ type Promo = {
   created_at: string;
 };
 
-type AdminTab = "users" | "banners" | "promotions" | "promocodes";
+type AdminTab = "users" | "banners" | "promotions" | "promocodes" | "crypto";
 
 type PromoCode = {
   id: string;
@@ -108,6 +108,7 @@ function AdminPanel() {
           { key: "banners" as const, label: "Банери", icon: Image },
           { key: "promotions" as const, label: "Акції", icon: Gift },
           { key: "promocodes" as const, label: "Промокоди", icon: Ticket },
+          { key: "crypto" as const, label: "Крипто", icon: Coins },
         ]).map(t => (
           <button
             key={t.key}
@@ -130,6 +131,7 @@ function AdminPanel() {
         {tab === "banners" && <BannersTab />}
         {tab === "promotions" && <PromotionsTab />}
         {tab === "promocodes" && <PromoCodesTab />}
+        {tab === "crypto" && <CryptoTab />}
       </div>
     </div>
   );
@@ -977,6 +979,141 @@ function PromoCodesTab() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+
+
+// ============= CRYPTO TAB =============
+type CryptoCoinAdmin = {
+  id: string; symbol: string; name: string; image_url: string;
+  price: number; change_24h: number; volatility: number;
+  market_cap: number | null; active: boolean; created_at: string;
+};
+
+function CryptoTab() {
+  const [coins, setCoins] = useState<CryptoCoinAdmin[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [msg, setMsg] = useState(""); const [msgErr, setMsgErr] = useState(false);
+  const empty = { symbol: "", name: "", image_url: "", price: 1, change_24h: 0, volatility: 1, market_cap: 0, active: true };
+  const [form, setForm] = useState<Omit<CryptoCoinAdmin, "id" | "created_at">>(empty);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("crypto_coins").select("*").order("created_at", { ascending: false });
+    setCoins((data ?? []) as CryptoCoinAdmin[]); setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    if (!form.symbol || !form.name || !form.image_url || form.price <= 0) {
+      setMsg("Заповніть symbol, name, image_url, price"); setMsgErr(true); return;
+    }
+    if (editingId) {
+      const { error } = await supabase.from("crypto_coins").update(form).eq("id", editingId);
+      if (error) { setMsg(error.message); setMsgErr(true); return; }
+    } else {
+      const { error } = await supabase.from("crypto_coins").insert(form);
+      if (error) { setMsg(error.message); setMsgErr(true); return; }
+    }
+    setMsg("Збережено"); setMsgErr(false); setCreating(false); setEditingId(null); setForm(empty); load();
+  };
+  const remove = async (id: string) => {
+    if (!confirm("Видалити монету?")) return;
+    await supabase.from("crypto_coins").delete().eq("id", id); load();
+  };
+  const toggle = async (c: CryptoCoinAdmin) => {
+    await supabase.from("crypto_coins").update({ active: !c.active }).eq("id", c.id); load();
+  };
+  const editStart = (c: CryptoCoinAdmin) => {
+    setEditingId(c.id); setCreating(true);
+    setForm({ symbol: c.symbol, name: c.name, image_url: c.image_url, price: c.price,
+      change_24h: c.change_24h, volatility: c.volatility, market_cap: c.market_cap ?? 0, active: c.active });
+  };
+
+  return (
+    <div className="admin-animate">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2"><Coins className="h-5 w-5 text-primary" />
+          <div className="text-lg font-bold">Крипто монети</div>
+          <span className="text-xs text-muted-foreground">({coins.length})</span></div>
+        {!creating && (
+          <button onClick={() => { setCreating(true); setEditingId(null); setForm(empty); }}
+            className="btn-primary rounded-xl px-4 py-2 text-sm flex items-center gap-2"><Plus className="h-4 w-4" /> Додати</button>
+        )}
+      </div>
+      <Msg text={msg} isError={msgErr} />
+      {creating && (
+        <div className="glass mb-4 rounded-2xl p-4 space-y-3" style={{ border: "1px solid oklch(from var(--primary) l c h / 0.35)" }}>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs text-muted-foreground mb-1 block">Symbol *</label>
+              <input value={form.symbol} onChange={e=>setForm(f=>({...f,symbol:e.target.value.toUpperCase()}))} placeholder="BTC"
+                className="w-full rounded-xl bg-input px-4 py-2.5 text-sm uppercase font-mono outline-none focus:ring-2 focus:ring-ring" /></div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">Назва *</label>
+              <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Bitcoin"
+                className="w-full rounded-xl bg-input px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring" /></div>
+          </div>
+          <div><label className="text-xs text-muted-foreground mb-1 block">URL зображення *</label>
+            <input value={form.image_url} onChange={e=>setForm(f=>({...f,image_url:e.target.value}))} placeholder="https://..."
+              className="w-full rounded-xl bg-input px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring" />
+            {form.image_url && <img src={form.image_url} alt="" className="mt-2 h-16 w-16 rounded-full object-cover" />}</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div><label className="text-xs text-muted-foreground mb-1 block">Ціна USD *</label>
+              <input type="number" step="0.000001" value={form.price} onChange={e=>setForm(f=>({...f,price:Number(e.target.value)}))}
+                className="w-full rounded-xl bg-input px-3 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-ring" /></div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">24г %</label>
+              <input type="number" step="0.01" value={form.change_24h} onChange={e=>setForm(f=>({...f,change_24h:Number(e.target.value)}))}
+                className="w-full rounded-xl bg-input px-3 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-ring" /></div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">Волатильність</label>
+              <input type="number" step="0.1" value={form.volatility} onChange={e=>setForm(f=>({...f,volatility:Number(e.target.value)}))}
+                className="w-full rounded-xl bg-input px-3 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-ring" /></div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">Капіталізація</label>
+              <input type="number" value={form.market_cap ?? 0} onChange={e=>setForm(f=>({...f,market_cap:Number(e.target.value)}))}
+                className="w-full rounded-xl bg-input px-3 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-ring" /></div>
+          </div>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div className="relative">
+              <input type="checkbox" className="sr-only" checked={form.active} onChange={e=>setForm(f=>({...f,active:e.target.checked}))} />
+              <div className="w-10 h-5 rounded-full transition-colors" style={{ background: form.active ? "var(--primary)" : "var(--muted)" }} />
+              <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+                style={{ transform: form.active ? "translateX(20px)" : "translateX(0)" }} />
+            </div>
+            <span className="text-sm">Активна (видна на біржі)</span>
+          </label>
+          <div className="flex gap-2 pt-1">
+            <button onClick={save} className="btn-primary rounded-xl px-5 py-2.5 text-sm flex items-center gap-2 flex-1">
+              <Save className="h-4 w-4" /> Зберегти</button>
+            <button onClick={() => { setCreating(false); setEditingId(null); setForm(empty); setMsg(""); }}
+              className="glass rounded-xl px-4 py-2.5 text-sm hover:bg-destructive/10 transition"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+      )}
+      {loading ? <div className="glass rounded-2xl p-8 text-center text-muted-foreground">Завантаження...</div>
+        : coins.length === 0 ? <div className="glass rounded-2xl p-8 text-center"><Coins className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" /><div className="text-muted-foreground">Немає монет</div></div>
+        : <div className="space-y-2">{coins.map(c=>(
+            <div key={c.id} className="glass rounded-2xl p-3 flex items-center gap-3" style={{ opacity: c.active ? 1 : 0.5 }}>
+              <img src={c.image_url} alt={c.symbol} className="h-12 w-12 rounded-full object-cover" />
+              <div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap">
+                <div className="font-bold text-sm">{c.name}</div>
+                <span className="text-[10px] uppercase font-mono text-muted-foreground">{c.symbol}</span>
+                {c.active && <span className="text-[10px] rounded-full px-2 py-0.5 bg-primary/15 text-primary">Active</span>}
+              </div>
+              <div className="flex gap-3 text-xs font-mono mt-0.5">
+                <span>${c.price < 1 ? c.price.toFixed(6) : c.price.toFixed(2)}</span>
+                <span className={c.change_24h >= 0 ? "text-primary" : "text-destructive"}>{c.change_24h >= 0 ? "+" : ""}{c.change_24h.toFixed(2)}%</span>
+                <span className="text-muted-foreground">vol {c.volatility}</span>
+              </div></div>
+              <div className="flex gap-1.5">
+                <button onClick={()=>toggle(c)} className="glass rounded-lg p-1.5 hover:bg-primary/20 transition">
+                  {c.active ? <EyeOff className="h-3.5 w-3.5 text-muted-foreground" /> : <Eye className="h-3.5 w-3.5 text-primary" />}
+                </button>
+                <button onClick={()=>editStart(c)} className="glass rounded-lg p-1.5 hover:bg-primary/20 transition"><TrendingUp className="h-3.5 w-3.5 text-primary" /></button>
+                <button onClick={()=>remove(c.id)} className="glass rounded-lg p-1.5 hover:bg-destructive/20 transition"><Trash2 className="h-3.5 w-3.5 text-destructive" /></button>
+              </div>
+            </div>))}</div>}
     </div>
   );
 }

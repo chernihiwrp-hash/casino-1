@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/lib/auth";
 import { Layout } from "@/components/Layout";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -13,6 +13,7 @@ import InventoryPage from "@/pages/Inventory";
 import ProfilePage from "@/pages/Profile";
 import AdminPage from "@/pages/Admin";
 import PromoPage from "@/pages/Promo";
+import ExchangePage from "@/pages/Exchange";
 
 function NotFound() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/roulette" element={<RequireAuth><RoulettePage /></RequireAuth>} />
           <Route path="/cases" element={<RequireAuth><CasesPage /></RequireAuth>} />
           <Route path="/upgrader" element={<RequireAuth><UpgraderPage /></RequireAuth>} />
+          <Route path="/exchange" element={<RequireAuth><ExchangePage /></RequireAuth>} />
           <Route path="/inventory" element={<RequireAuth><InventoryPage /></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
           <Route path="/promo" element={<RequireAuth><PromoPage /></RequireAuth>} />

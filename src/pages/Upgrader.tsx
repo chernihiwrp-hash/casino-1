@@ -1,9 +1,10 @@
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
 import { useNftPool, useUserNfts, giveNftToUser, removeOwnedNft } from "@/lib/nft";
 import { Sparkles, Target, Package, Wallet } from "lucide-react";
 import type { NftGift } from "@/lib/supabase";
+import { setNavLocked } from "@/lib/lock";
 
 
 function UpgraderPage() {
@@ -13,8 +14,6 @@ function UpgraderPage() {
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
   const [spinning, setSpinning] = useState(false);
-  const [rotation, setRotation] = useState(0);
-  const [animatePointer, setAnimatePointer] = useState(false);
   const [result, setResult] = useState<{ won: boolean; nft?: NftGift } | null>(null);
   const [msg, setMsg] = useState("");
   const [selectedSnapshot, setSelectedSnapshot] = useState<(NftGift & { ownerRowId: string }) | null>(null);
@@ -22,6 +21,8 @@ function UpgraderPage() {
 
   // FIX BUG 1: track the real CSS rotation value so each spin always goes forward
   const currentRotationRef = useRef(0);
+  const pointerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => () => setNavLocked(false), []);
 
   const selected = useMemo(() => items.find((i) => i.ownerRowId === selectedRow), [items, selectedRow]);
   const target = useMemo(() => pool.find((p) => p.id === targetId), [pool, targetId]);
@@ -56,6 +57,7 @@ function UpgraderPage() {
     setTargetSnapshot(snapTarget);
 
     setMsg(""); setResult(null); setSpinning(true);
+    setNavLocked(true);
 
     const chanceVal = snapTarget.price > 0
       ? Math.min(0.95, (snapSelected.price / snapTarget.price) * 0.9)
@@ -64,23 +66,23 @@ function UpgraderPage() {
     const winArc = chanceVal * 360;
     const landing = won ? Math.random() * winArc : winArc + Math.random() * (360 - winArc);
 
-    // FIX BUG 1: Always spin forward from current position.
-    // Snap to nearest 360-boundary (no visible change), then add 6 full spins + landing.
-    const snapBase = currentRotationRef.current - (currentRotationRef.current % 360);
-    const spinTarget = snapBase + 360 * 6 + landing;
-
-    // Step 1: disable transition and snap arrow to the 360-boundary (same visual angle)
-    setAnimatePointer(false);
-    setRotation(snapBase);
-
-    // Step 2: on next paint enable transition and rotate to target
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setAnimatePointer(true);
-        setRotation(spinTarget);
-        currentRotationRef.current = spinTarget;
+    const from = currentRotationRef.current;
+    const to = from + 360 * 6 + landing;
+    currentRotationRef.current = to;
+    const el = pointerRef.current;
+    if (el) {
+      el.getAnimations().forEach((a) => a.cancel());
+      const anim = el.animate(
+        [
+          { transform: `translateX(-50%) rotate(${from}deg)` },
+          { transform: `translateX(-50%) rotate(${to}deg)` },
+        ],
+        { duration: 3200, easing: "cubic-bezier(0.2, 0.85, 0.25, 1)", fill: "forwards" },
+      );
+      anim.addEventListener("finish", () => {
+        el.style.transform = `translateX(-50%) rotate(${to}deg)`;
       });
-    });
+    }
 
     setTimeout(async () => {
       try {
@@ -89,6 +91,7 @@ function UpgraderPage() {
         } catch (e: any) {
           setMsg("Помилка: не вдалося спалити NFT (" + (e?.message || "RLS") + ")");
           setSpinning(false);
+          setNavLocked(false);
           setSelectedSnapshot(null);
           setTargetSnapshot(null);
           setSelectedRow(null);
@@ -110,6 +113,7 @@ function UpgraderPage() {
         }
       } finally {
         setSpinning(false);
+        setNavLocked(false);
         setSelectedSnapshot(null);
         setTargetSnapshot(null);
         setSelectedRow(null);
@@ -193,11 +197,9 @@ function UpgraderPage() {
                 )}
               </svg>
               <div
+                ref={pointerRef}
                 className="pointer-events-none absolute left-1/2 top-0 h-1/2 w-0 origin-bottom"
-                style={{
-                  transform: `translateX(-50%) rotate(${rotation}deg)`,
-                  transition: animatePointer ? "transform 3s cubic-bezier(0.2, 0.85, 0.25, 1)" : "none",
-                }}
+                style={{ transform: "translateX(-50%) rotate(0deg)" }}
               >
                 <div
                   className="absolute left-1/2 -translate-x-1/2"
