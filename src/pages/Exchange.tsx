@@ -76,10 +76,11 @@ function Sparkline({ data, up }: { data: PricePoint[]; up: boolean }) {
 
 // ─── BigChart with tooltip + smooth animation ─────────────────────────────────
 
-type TooltipState = { x: number; y: number; price: number; ts: number } | null;
+type TooltipState = { xPct: number; yPct: number; price: number; ts: number } | null;
 
 function BigChart({ data, up }: { data: PricePoint[]; up: boolean }) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<SVGPathElement>(null);
   const areaRef = useRef<SVGPathElement>(null);
   const crossXRef = useRef<SVGLineElement>(null);
@@ -92,11 +93,14 @@ function BigChart({ data, up }: { data: PricePoint[]; up: boolean }) {
   const startTimeRef = useRef<number | null>(null);
   const ANIM_MS = 700;
   const W = 600, H = 160;
+  // unique id per chart instance to avoid gradient ID collisions
+  const gradId = useRef(`cg-${Math.random().toString(36).slice(2)}`).current;
 
   const [tooltip, setTooltip] = useState<TooltipState>(null);
   const currentPtsRef = useRef<{ x: number; y: number; price: number; ts: number }[]>([]);
 
   const color = up ? "var(--primary)" : "var(--destructive)";
+  const crossColor = "rgba(150,150,170,0.7)";
 
   const ease = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
@@ -206,11 +210,11 @@ function BigChart({ data, up }: { data: PricePoint[]; up: boolean }) {
       dotRef.current.style.opacity = "1";
     }
 
-    // Tooltip position (convert back to screen %)
-    const tooltipX = (nearest.x / W) * rect.width + rect.left;
-    const tooltipY = (nearest.y / H) * rect.height + rect.top;
-    setTooltip({ x: tooltipX, y: tooltipY, price: nearest.price, ts: nearest.ts });
-    void my;
+    // Use percentage-based position relative to container (no fixed/viewport coords)
+    const xPct = (nearest.x / W) * 100;
+    const yPct = (nearest.y / H) * 100;
+    setTooltip({ xPct, yPct, price: nearest.price, ts: nearest.ts });
+    void scaleY; void my;
   }, []);
 
   const handleMouseLeave = useCallback(() => {
@@ -223,7 +227,7 @@ function BigChart({ data, up }: { data: PricePoint[]; up: boolean }) {
   if (data.length < 2) return null;
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={containerRef} className="relative h-full w-full">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -233,28 +237,28 @@ function BigChart({ data, up }: { data: PricePoint[]; up: boolean }) {
         onMouseLeave={handleMouseLeave}
       >
         <defs>
-          <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.35" />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path ref={areaRef} fill="url(#cg)" />
+        <path ref={areaRef} fill={`url(#${gradId})`} />
         <path ref={lineRef} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {/* Crosshair lines */}
-        <line ref={crossXRef} stroke={color} strokeWidth="1" strokeDasharray="4 3" opacity="0" style={{ transition: "opacity 0.1s" }} />
-        <line ref={crossYRef} stroke={color} strokeWidth="1" strokeDasharray="4 3" opacity="0" style={{ transition: "opacity 0.1s" }} />
+        {/* Crosshair lines - gray, not colored */}
+        <line ref={crossXRef} stroke={crossColor} strokeWidth="1" strokeDasharray="4 3" opacity="0" style={{ transition: "opacity 0.1s" }} />
+        <line ref={crossYRef} stroke={crossColor} strokeWidth="1" strokeDasharray="4 3" opacity="0" style={{ transition: "opacity 0.1s" }} />
         {/* Hover dot */}
         <circle ref={dotRef} r="4" fill={color} stroke="var(--background)" strokeWidth="2" opacity="0" style={{ transition: "opacity 0.1s" }} />
       </svg>
 
-      {/* Tooltip box */}
+      {/* Tooltip box - absolute inside container, not fixed */}
       {tooltip && (
         <div
-          className="pointer-events-none fixed z-50 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur-sm"
+          className="pointer-events-none absolute z-50 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-xl backdrop-blur-sm"
           style={{
-            left: tooltip.x + 14,
-            top: tooltip.y - 38,
-            transform: tooltip.x > window.innerWidth - 180 ? "translateX(-110%)" : undefined,
+            left: `calc(${tooltip.xPct}% + 10px)`,
+            top: `calc(${tooltip.yPct}% - 50px)`,
+            transform: tooltip.xPct > 70 ? "translateX(-110%)" : undefined,
           }}
         >
           <div className="font-mono text-sm font-bold" style={{ color }}>
@@ -420,6 +424,18 @@ export default function ExchangePage() {
     setHoldings((data ?? []) as CryptoHolding[]);
   }, [user]);
   useEffect(() => { loadHoldings(); }, [loadHoldings]);
+
+  // Realtime subscription for holdings changes (so amount updates instantly after buy/sell)
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel("holdings_realtime_v1")
+      .on("postgres_changes", { event: "*", schema: "public", table: "crypto_holdings", filter: `username=eq.${user.username}` }, () => {
+        loadHoldings();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, loadHoldings]);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
