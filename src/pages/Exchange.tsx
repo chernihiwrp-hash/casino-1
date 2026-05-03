@@ -333,15 +333,24 @@ export default function ExchangePage() {
       });
 
       setCoins(coinsWithHistory);
-      setSelectedId((prev) => prev ?? (list[0]?.id ?? null));
+      // БАГ 2 FIX: відновлюємо вибрану монету з localStorage
+      const saved = localStorage.getItem("exch_selected_coin");
+      const savedExists = saved && list.some((c) => c.id === saved);
+      setSelectedId(savedExists ? saved : (list[0]?.id ?? null));
     };
     init();
   }, []);
 
+  // Зберігаємо вибрану монету при зміні
+  useEffect(() => {
+    if (selectedId) localStorage.setItem("exch_selected_coin", selectedId);
+  }, [selectedId]);
+
   // ── Supabase Realtime: receive global price pushes ─────────────────────────
   useEffect(() => {
+    const channelName = `crypto_prices_live_${Date.now()}`;
     const channel = supabase
-      .channel("crypto_prices_v3")
+      .channel(channelName)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crypto_coins" }, (payload) => {
         const updated = payload.new as CryptoCoin;
         const now = Date.now();
@@ -370,7 +379,10 @@ export default function ExchangePage() {
         localStorage.setItem(KEY, String(Date.now()));
       }
     };
-    tryLead();
+    // При старті завжди пробуємо стати лідером (попередня сесія вже мертва)
+    localStorage.removeItem(KEY);
+    isLeaderRef.current = true;
+    localStorage.setItem(KEY, String(Date.now()));
     const hb = setInterval(() => {
       if (isLeaderRef.current) localStorage.setItem(KEY, String(Date.now()));
       else tryLead();
