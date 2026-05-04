@@ -279,13 +279,9 @@ export default function ExchangePage() {
   const [amountCr, setAmountCr] = useState<string>("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const isLeaderRef = useRef(false);
-  const coinsRef = useRef<CoinView[]>([]);
   const tickRef = useRef<number | null>(null);
 
-  useEffect(() => { coinsRef.current = coins; }, [coins]);
-
-  // ── Load coins + persistent history from Supabase ───────────────────────────
+  // ── Load coins from Supabase, generate local history ────────────────────────
   useEffect(() => {
     const init = async () => {
       const { data: coinData } = await supabase
@@ -295,29 +291,9 @@ export default function ExchangePage() {
         .order("market_cap", { ascending: false });
       const list = (coinData ?? []) as CryptoCoin[];
 
-      // Load price history for all coins
-      const { data: histData } = await supabase
-        .from("crypto_price_history")
-        .select("coin_id, price, recorded_at")
-        .in("coin_id", list.map((c) => c.id))
-        .order("recorded_at", { ascending: true });
-
-      const histMap: Record<string, PricePoint[]> = {};
-      for (const row of (histData ?? []) as { coin_id: string; price: number; recorded_at: string }[]) {
-        if (!histMap[row.coin_id]) histMap[row.coin_id] = [];
-        histMap[row.coin_id].push({ price: row.price, ts: new Date(row.recorded_at).getTime() });
-      }
-
       const now = Date.now();
       const coinsWithHistory = list.map((c) => {
-        const h = histMap[c.id];
-        if (h && h.length >= 2) {
-          // Trim to last HISTORY_LEN points, ensure current price at end
-          const trimmed = h.slice(-HISTORY_LEN);
-          trimmed[trimmed.length - 1] = { price: c.price, ts: now };
-          return { ...c, history: trimmed };
-        }
-        // Generate synthetic history if none stored yet
+        // Генеруємо локальну синтетичну історію для кожного юзера окремо
         const synthetic: PricePoint[] = [];
         let p = c.price;
         for (let i = HISTORY_LEN - 1; i >= 0; i--) {
@@ -329,86 +305,26 @@ export default function ExchangePage() {
       });
 
       setCoins(coinsWithHistory);
-      setSelectedId((prev) => prev ?? (list[0]?.id ?? null));
+      setSelectedId(list[0]?.id ?? null);
     };
     init();
   }, []);
 
-  // ── Supabase Realtime: receive global price pushes ─────────────────────────
-  useEffect(() => {
-    const channel = supabase
-      .channel("crypto_prices_v3")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crypto_coins" }, (payload) => {
-        const updated = payload.new as CryptoCoin;
-        const now = Date.now();
-        setCoins((prev) =>
-          prev.map((c) => {
-            if (c.id !== updated.id) return c;
-            const newHistory = [...c.history.slice(-(HISTORY_LEN - 1)), { price: updated.price, ts: now }];
-            return { ...c, price: updated.price, change_24h: updated.change_24h, history: newHistory };
-          }),
-        );
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  // ── Leader election ────────────────────────────────────────────────────────
-  useEffect(() => {
-    const KEY = "exch_leader_ts_v2";
-    const HB = 1500;
-    const TIMEOUT = 4000;
-
-    const tryLead = () => {
-      const last = Number(localStorage.getItem(KEY) ?? 0);
-      if (Date.now() - last > TIMEOUT) {
-        isLeaderRef.current = true;
-        localStorage.setItem(KEY, String(Date.now()));
-      }
-    };
-    tryLead();
-    const hb = setInterval(() => {
-      if (isLeaderRef.current) localStorage.setItem(KEY, String(Date.now()));
-      else tryLead();
-    }, HB);
-    const onStorage = (e: StorageEvent) => { if (e.key === KEY) isLeaderRef.current = false; };
-    window.addEventListener("storage", onStorage);
-    return () => { clearInterval(hb); window.removeEventListener("storage", onStorage); };
-  }, []);
-
-  // ── Leader ticker: update prices in DB + save history ──────────────────────
+  // ── Локальний тікер: кожен юзер рахує ціни у себе ──────────────────────────
   useEffect(() => {
     if (coins.length === 0) return;
-    tickRef.current = window.setInterval(async () => {
-      if (!isLeaderRef.current) return;
-      const current = coinsRef.current;
-      const toUpdate = current.filter(() => Math.random() < 0.6);
-      const now = new Date().toISOString();
-
-      for (const c of toUpdate) {
-        const change = (Math.random() - 0.49) * (c.volatility || 1) * 0.006;
-        const newPrice = Math.max(0.0001, c.price * (1 + change));
-        const newChange = c.change_24h + change * 100 * 0.05;
-
-        // Update coin price
-        await supabase.from("crypto_coins")
-          .update({ price: newPrice, change_24h: newChange })
-          .eq("id", c.id);
-
-        // Persist price to history table
-        await supabase.from("crypto_price_history")
-          .insert({ coin_id: c.id, price: newPrice, recorded_at: now });
-
-        // Keep history table clean: delete rows older than ~3 minutes (90 points)
-        // Only do this 10% of the time to avoid too many deletes
-        if (Math.random() < 0.1) {
-          const cutoff = new Date(Date.now() - 180000).toISOString();
-          await supabase.from("crypto_price_history")
-            .delete()
-            .eq("coin_id", c.id)
-            .lt("recorded_at", cutoff);
-        }
-      }
+    tickRef.current = window.setInterval(() => {
+      const now = Date.now();
+      setCoins((prev) =>
+        prev.map((c) => {
+          if (Math.random() > 0.6) return c;
+          const change = (Math.random() - 0.49) * (c.volatility || 1) * 0.006;
+          const newPrice = Math.max(0.0001, c.price * (1 + change));
+          const newChange = c.change_24h + change * 100 * 0.05;
+          const newHistory = [...c.history.slice(-(HISTORY_LEN - 1)), { price: newPrice, ts: now }];
+          return { ...c, price: newPrice, change_24h: newChange, history: newHistory };
+        })
+      );
     }, TICK_MS);
     return () => { if (tickRef.current) clearInterval(tickRef.current); };
   }, [coins.length]); // eslint-disable-line react-hooks/exhaustive-deps
