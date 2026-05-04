@@ -192,48 +192,76 @@ function UpgraderPage() {
           {/* Wheel */}
           <div className="flex flex-col items-center justify-center">
             <div className="relative h-36 w-36">
-              {/* Wheel SVG — -rotate-90 so 0° is at 12-o'clock */}
-              <svg viewBox="0 0 120 120" className="absolute inset-0 -rotate-90 ring-pulse">
-                {/* Loss zone (full ring background) */}
+              {/*
+                SVG coord system: centre (60,60), r=54.
+                We rotate the whole SVG by -90° so 0° maps to 12-o'clock.
+                Win arc starts at 12-o'clock (angle=0) and goes clockwise.
+                Circumference = 2π*54 ≈ 339.292
+              */}
+              <svg viewBox="0 0 120 120" className="absolute inset-0 ring-pulse"
+                   style={{ transform: "rotate(-90deg)" }}>
+                {/* ① Full ring = loss zone (dark red) */}
                 <circle cx="60" cy="60" r="54" fill="none"
-                  stroke="#ef444440" strokeWidth="12" />
-                {/* Win zone — sharp edges, no linecap */}
+                  stroke="#7f1d1d" strokeWidth="11" strokeLinecap="butt" />
+
+                {/* ② Win zone overlay (green arc) */}
                 {chance > 0 && (
                   <circle cx="60" cy="60" r="54" fill="none"
                     stroke="var(--primary)"
-                    strokeWidth="12"
+                    strokeWidth="11"
                     strokeLinecap="butt"
-                    strokeDasharray={`${(winArcDeg / 360) * 339.29} 339.29`}
+                    strokeDasharray={`${(winArcDeg / 360) * 339.292} 339.292`}
+                    strokeDashoffset="0"
                   />
                 )}
-                {/* Sharp border line at win/loss boundary */}
-                {chance > 0 && chance < 1 && (
-                  <>
-                    {/* Line at start (0°) */}
-                    <line x1="60" y1="6" x2="60" y2="18"
-                      stroke="white" strokeWidth="2" opacity="0.7" />
-                    {/* Line at win-arc end — rotate via transform */}
-                    <line x1="60" y1="6" x2="60" y2="18"
-                      stroke="white" strokeWidth="2" opacity="0.7"
-                      transform={`rotate(${winArcDeg}, 60, 60)`} />
-                  </>
-                )}
+
+                {/* ③ Divider lines — drawn in NON-rotated SVG space then rotated */}
+                {chance > 0 && chance < 1 && (() => {
+                  // r_inner = 60-11/2=54.5, r_outer = 60-11/2+11=65.5 → use r±6
+                  const r = 54;
+                  const hw = 11 / 2;
+                  // Line at 0° (top, before SVG rotation) in SVG coords = straight up
+                  const x1s = 60, y1s = 60 - r - hw - 1, x2s = 60, y2s = 60 - r + hw + 1;
+                  // Line at winArcDeg°
+                  const rad = (winArcDeg * Math.PI) / 180;
+                  const cos = Math.cos(rad), sin = Math.sin(rad);
+                  const rot = (x: number, y: number) => ({
+                    x: 60 + (x - 60) * cos - (y - 60) * sin,
+                    y: 60 + (x - 60) * sin + (y - 60) * cos,
+                  });
+                  const p1 = rot(x1s, y1s), p2 = rot(x2s, y2s);
+                  return (
+                    <>
+                      <line x1={x1s} y1={y1s} x2={x2s} y2={y2s}
+                        stroke="#000" strokeWidth="2.5" strokeLinecap="butt" opacity="0.9" />
+                      <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                        stroke="#000" strokeWidth="2.5" strokeLinecap="butt" opacity="0.9" />
+                    </>
+                  );
+                })()}
               </svg>
 
-              {/* Pointer — centred, rotates around centre of wheel */}
+              {/*
+                Pointer: a fixed arrow at 12-o'clock, OUTSIDE the ring, pointing INWARD.
+                The div covers the whole square and rotates around its own centre.
+                The arrow sits at the top edge pointing down into the ring.
+              */}
               <div
                 ref={pointerRef}
-                className="pointer-events-none absolute inset-0 flex items-start justify-center"
-                style={{ transform: "rotate(0deg)", transformOrigin: "50% 50%" }}
+                className="pointer-events-none absolute inset-0"
+                style={{ transform: "rotate(0deg)", transformOrigin: "center center" }}
               >
-                {/* Triangle pointing UP toward 12-o'clock */}
+                {/* Arrow: positioned at top-centre, pointing DOWN (into the ring) */}
                 <div style={{
-                  marginTop: "4px",
+                  position: "absolute",
+                  top: "2px",
+                  left: "50%",
+                  transform: "translateX(-50%)",
                   width: 0, height: 0,
                   borderLeft: "7px solid transparent",
                   borderRight: "7px solid transparent",
-                  borderBottom: "14px solid white",
-                  filter: "drop-shadow(0 0 5px var(--primary))",
+                  borderTop: "13px solid white",
+                  filter: "drop-shadow(0 0 4px var(--primary))",
                 }} />
               </div>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
