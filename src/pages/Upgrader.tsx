@@ -63,24 +63,32 @@ function UpgraderPage() {
       ? Math.min(0.95, (snapSelected.price / snapTarget.price) * 0.9)
       : 0.95;
     const won = Math.random() < chanceVal;
-    const winArc = chanceVal * 360;
-    const landing = won ? Math.random() * winArc : winArc + Math.random() * (360 - winArc);
 
-    const from = currentRotationRef.current;
-    const to = from + 360 * 6 + landing;
+    // Win arc starts at 0° (12-o'clock). Pointer points UP at rotation=0.
+    // Win zone: [0 .. winArcDeg), Loss zone: [winArcDeg .. 360)
+    const winArcDeg = chanceVal * 360;
+    const MARGIN = 4;
+    const landing = won
+      ? MARGIN + Math.random() * (winArcDeg - MARGIN * 2)
+      : winArcDeg + MARGIN + Math.random() * (360 - winArcDeg - MARGIN * 2);
+
+    const prev = currentRotationRef.current;
+    // Always spin at least 5 full rotations forward, then land precisely
+    const to = prev + 360 * 5 + ((landing - prev % 360) + 360) % 360;
     currentRotationRef.current = to;
+
     const el = pointerRef.current;
     if (el) {
       el.getAnimations().forEach((a) => a.cancel());
       const anim = el.animate(
         [
-          { transform: `translateX(-50%) rotate(${from}deg)` },
-          { transform: `translateX(-50%) rotate(${to}deg)` },
+          { transform: `rotate(${prev}deg)` },
+          { transform: `rotate(${to}deg)` },
         ],
         { duration: 3200, easing: "cubic-bezier(0.2, 0.85, 0.25, 1)", fill: "forwards" },
       );
       anim.addEventListener("finish", () => {
-        el.style.transform = `translateX(-50%) rotate(${to}deg)`;
+        el.style.transform = `rotate(${to}deg)`;
       });
     }
 
@@ -184,35 +192,49 @@ function UpgraderPage() {
           {/* Wheel */}
           <div className="flex flex-col items-center justify-center">
             <div className="relative h-36 w-36">
+              {/* Wheel SVG — -rotate-90 so 0° is at 12-o'clock */}
               <svg viewBox="0 0 120 120" className="absolute inset-0 -rotate-90 ring-pulse">
-                <circle cx="60" cy="60" r="54" fill="none" stroke="oklch(from var(--primary) l c h / 0.3)" strokeWidth="10" />
+                {/* Loss zone (full ring background) */}
+                <circle cx="60" cy="60" r="54" fill="none"
+                  stroke="#ef444440" strokeWidth="12" />
+                {/* Win zone — sharp edges, no linecap */}
                 {chance > 0 && (
-                  <circle
-                    cx="60" cy="60" r="54" fill="none"
+                  <circle cx="60" cy="60" r="54" fill="none"
                     stroke="var(--primary)"
-                    strokeWidth="10"
-                    strokeLinecap="round"
+                    strokeWidth="12"
+                    strokeLinecap="butt"
                     strokeDasharray={`${(winArcDeg / 360) * 339.29} 339.29`}
                   />
                 )}
+                {/* Sharp border line at win/loss boundary */}
+                {chance > 0 && chance < 1 && (
+                  <>
+                    {/* Line at start (0°) */}
+                    <line x1="60" y1="6" x2="60" y2="18"
+                      stroke="white" strokeWidth="2" opacity="0.7" />
+                    {/* Line at win-arc end — rotate via transform */}
+                    <line x1="60" y1="6" x2="60" y2="18"
+                      stroke="white" strokeWidth="2" opacity="0.7"
+                      transform={`rotate(${winArcDeg}, 60, 60)`} />
+                  </>
+                )}
               </svg>
+
+              {/* Pointer — centred, rotates around centre of wheel */}
               <div
                 ref={pointerRef}
-                className="pointer-events-none absolute left-1/2 top-0 h-1/2 w-0 origin-bottom"
-                style={{ transform: "translateX(-50%) rotate(0deg)" }}
+                className="pointer-events-none absolute inset-0 flex items-start justify-center"
+                style={{ transform: "rotate(0deg)", transformOrigin: "50% 50%" }}
               >
-                <div
-                  className="absolute left-1/2 -translate-x-1/2"
-                  style={{
-                    top: "-2px",
-                    width: 0,
-                    height: 0,
-                    borderLeft: "8px solid transparent",
-                    borderRight: "8px solid transparent",
-                    borderTop: "14px solid var(--primary)",
-                    filter: "drop-shadow(0 0 6px var(--primary))",
-                  }}
-                />
+                {/* Triangle pointing UP toward 12-o'clock */}
+                <div style={{
+                  marginTop: "4px",
+                  width: 0, height: 0,
+                  borderLeft: "7px solid transparent",
+                  borderRight: "7px solid transparent",
+                  borderBottom: "14px solid white",
+                  filter: "drop-shadow(0 0 5px var(--primary))",
+                }} />
               </div>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <div className="font-mono text-2xl font-bold text-primary glow-text">

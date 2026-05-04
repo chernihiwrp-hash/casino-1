@@ -376,24 +376,39 @@ function SlotsGame() {
     setPullAnim(true);
     setTimeout(() => setPullAnim(false), 300);
 
-    // Boost: ~22% шанс на трійку (jackpot/seven рідше), ~32% — на пару по середній лінії
+    // RTP ~92%: 5% трійка, 35% пара, 60% програш
     const roll = Math.random();
     let finals: SymbolKey[][];
-    if (roll < 0.22) {
-      // Трійка одного символу — без джекпотів частіше
-      const pickPool: SymbolKey[] = ["cherry", "cherry", "lemon", "lemon", "bell", "star", "diamond", "seven", "jackpot"];
+    if (roll < 0.05) {
+      // Трійка — рідкісна подія (5%)
+      // Звичайні символи частіше, jackpot/seven дуже рідко
+      const pickPool: SymbolKey[] = [
+        "cherry", "cherry", "cherry",
+        "lemon",  "lemon",  "lemon",
+        "bell",   "bell",
+        "star",   "star",
+        "diamond",
+        "seven",
+        "jackpot",
+      ];
       const sym = pickPool[Math.floor(Math.random() * pickPool.length)];
       finals = [spinReelWithMiddle(sym), spinReelWithMiddle(sym), spinReelWithMiddle(sym)];
-    } else if (roll < 0.54) {
-      // Пара (перший+другий або другий+третій)
+    } else if (roll < 0.40) {
+      // Пара (35%) — два однакових символи на середній лінії
       const sym = randomSymbol();
       const left = Math.random() < 0.5;
+      // Третій символ гарантовано ІНШИЙ щоб не вийшла випадкова трійка
+      let other = randomSymbol();
+      while (other === sym) other = randomSymbol();
       finals = left
-        ? [spinReelWithMiddle(sym), spinReelWithMiddle(sym), spinReelWithMiddle(randomSymbol())]
-        : [spinReelWithMiddle(randomSymbol()), spinReelWithMiddle(sym), spinReelWithMiddle(sym)];
-      // якщо випадково трійка — теж ок
+        ? [spinReelWithMiddle(sym),   spinReelWithMiddle(sym),   spinReelWithMiddle(other)]
+        : [spinReelWithMiddle(other), spinReelWithMiddle(sym),   spinReelWithMiddle(sym)];
     } else {
-      finals = [spinReel(), spinReel(), spinReel()];
+      // Програш (60%) — всі три різні
+      let s1 = randomSymbol();
+      let s2 = randomSymbol(); while (s2 === s1) s2 = randomSymbol();
+      let s3 = randomSymbol(); while (s3 === s2) s3 = randomSymbol();
+      finals = [spinReelWithMiddle(s1), spinReelWithMiddle(s2), spinReelWithMiddle(s3)];
     }
     setFinalReels(finals);
     setSpinning(true);
