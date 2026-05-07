@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase, NftGift } from "./supabase";
+import { supabase, NftGift, secureInsert } from "./supabase";
 
 export function useNftPool() {
   const [pool, setPool] = useState<NftGift[]>([]);
@@ -50,8 +50,7 @@ export function pickWeightedNft(pool: NftGift[]): NftGift | null {
 }
 
 export async function giveNftToUser(username: string, nftId: string) {
-  const { error } = await supabase.from("nft_owners").insert({ owner_nick: username, nft_id: nftId });
-  if (error) throw new Error(error.message);
+  await secureInsert("nft_owners", { owner_nick: username, nft_id: nftId });
 }
 
 export async function removeOwnedNft(ownerRowId: string) {

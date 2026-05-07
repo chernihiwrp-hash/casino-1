@@ -1,6 +1,6 @@
 import { useAuth } from "@/lib/auth";
 import { RequireAuth, PageHeader } from "@/components/RequireAuth";
-import { supabase, DbUser } from "@/lib/supabase";
+import { supabase, DbUser, secureInsert, secureInsertReturning } from "@/lib/supabase";
 import { useState, useEffect, useCallback } from "react";
 import {
   Shield, Users, Megaphone, Plus, Trash2, Save, X,
@@ -354,7 +354,8 @@ function BannersTab() {
     if (form.link_url.trim()) payload.link_url = form.link_url.trim();
     if (form.bg_color.trim()) payload.bg_color = form.bg_color.trim();
 
-    const { data, error } = await supabase.from("banners").insert([payload]).select();
+    let error: { message: string; details?: string } | null = null;
+    try { await secureInsert("banners", payload); } catch (e) { error = { message: (e as Error).message }; }
     setSaving(false);
     if (error) {
       showMsg("Помилка збереження: " + error.message + (error.details ? " | " + error.details : ""), true);
@@ -567,7 +568,8 @@ function PromotionsTab() {
     if (form.description.trim()) payload.description = form.description.trim();
     if (form.expires_at) payload.expires_at = form.expires_at;
 
-    const { error } = await supabase.from("promotions").insert([payload]).select();
+    let error: { message: string; details?: string } | null = null;
+    try { await secureInsert("promotions", payload); } catch (e) { error = { message: (e as Error).message }; }
     setSaving(false);
     if (error) {
       showMsg("Помилка: " + error.message + (error.details ? " | " + error.details : ""), true);
@@ -793,7 +795,8 @@ function PromoCodesTab() {
     };
     if (form.expires_at) payload.expires_at = form.expires_at;
 
-    const { error } = await supabase.from("promo_codes").insert([payload]).select();
+    let error: { message: string; details?: string } | null = null;
+    try { await secureInsert("promo_codes", payload); } catch (e) { error = { message: (e as Error).message }; }
     setSaving(false);
     if (error) {
       showMsg("Помилка: " + error.message + (error.details ? " | " + error.details : ""), true);
@@ -1016,7 +1019,8 @@ function CryptoTab() {
       const { error } = await supabase.from("crypto_coins").update(form).eq("id", editingId);
       if (error) { setMsg(error.message); setMsgErr(true); return; }
     } else {
-      const { error } = await supabase.from("crypto_coins").insert(form);
+      let error: { message: string } | null = null;
+      try { await secureInsert("crypto_coins", form); } catch (e) { error = { message: (e as Error).message }; }
       if (error) { setMsg(error.message); setMsgErr(true); return; }
     }
     setMsg("Збережено"); setMsgErr(false); setCreating(false); setEditingId(null); setForm(empty); load();

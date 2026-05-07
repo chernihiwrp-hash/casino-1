@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { supabase, DbUser } from "./supabase";
+import { supabase, DbUser, secureInsertReturning } from "./supabase";
 
 type AuthCtx = {
   user: DbUser | null;
@@ -74,12 +74,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq("username", username)
       .maybeSingle();
     if (existing) throw new Error("Имя занято");
-    const { data, error } = await supabase
-      .from("users")
-      .insert({ username, password, balance: 1000, role: "player", theme: "green" })
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
+    const rows = await secureInsertReturning<DbUser>("users", {
+      username,
+      password,
+      balance: 1000,
+      role: "player",
+      theme: "green",
+    });
+    const data = rows[0];
+    if (!data) throw new Error("Не удалось создать пользователя");
     localStorage.setItem(STORAGE_KEY, String(data.id));
     setUser(data as DbUser);
   };

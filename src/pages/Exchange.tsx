@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
-import { supabase } from "@/lib/supabase";
+import { supabase, secureInsert } from "@/lib/supabase";
 import type { CryptoCoin, CryptoHolding } from "@/lib/crypto-types";
 import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity } from "lucide-react";
 
@@ -404,9 +404,12 @@ export default function ExchangePage() {
             .eq("id", holding.id);
           if (error) throw new Error(error.message);
         } else {
-          const { error } = await supabase.from("crypto_holdings")
-            .insert({ username: user.username, coin_id: selected.id, amount: coins_, avg_price: selected.price });
-          if (error) throw new Error(error.message);
+          await secureInsert("crypto_holdings", {
+            username: user.username,
+            coin_id: selected.id,
+            amount: coins_,
+            avg_price: selected.price,
+          });
         }
         setMsg(`✅ Куплено ${(cr / selected.price).toFixed(6)} ${selected.symbol}`);
       } else {

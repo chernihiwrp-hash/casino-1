@@ -8,6 +8,42 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false },
 });
 
+// ✅ БЕЗОПАСНЫЙ INSERT через серверный эндпоинт (как в site2)
+// Все INSERT-операции идут через /api/submit с service_role ключом,
+// чтобы RLS не блокировал анонимные вставки.
+export async function secureInsert(table: string, data: unknown): Promise<void> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, data }),
+  });
+  if (!res.ok) {
+    let msg = "Insert failed";
+    try {
+      const err = await res.json();
+      msg = err.error || msg;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
+}
+
+// Same as secureInsert, but returns the inserted rows (uses .select() server-side).
+export async function secureInsertReturning<T = unknown>(
+  table: string,
+  data: unknown,
+): Promise<T[]> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, data, returning: true }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Insert failed");
+  return (json.data ?? []) as T[];
+}
+
 export type DbUser = {
   id: number;
   username: string;
