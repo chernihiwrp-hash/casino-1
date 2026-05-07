@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { Sparkles } from "lucide-react";
@@ -6,9 +6,11 @@ import { Sparkles } from "lucide-react";
 function LoginPage() {
   const { user, login, register } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [params] = useSearchParams();
+  const [mode, setMode] = useState<"login" | "register">(params.get("ref") ? "register" : "login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [refCode, setRefCode] = useState((params.get("ref") || "").toUpperCase());
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -19,7 +21,7 @@ function LoginPage() {
     setErr(""); setBusy(true);
     try {
       if (mode === "login") await login(username.trim(), password);
-      else await register(username.trim(), password);
+      else await register(username.trim(), password, refCode.trim());
       navigate("/");
     } catch (e: any) {
       setErr(e.message || "Помилка");
@@ -53,6 +55,18 @@ function LoginPage() {
             required minLength={3}
             className="w-full rounded-xl border border-border bg-input px-4 py-2.5 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-ring" />
         </label>
+
+        {mode === "register" && (
+          <label className="mb-4 block">
+            <span className="mb-1 block text-xs uppercase tracking-wider text-muted-foreground">
+              Реф-код (необов'язково) — +1200 CR другу
+            </span>
+            <input value={refCode} onChange={e => setRefCode(e.target.value.toUpperCase())}
+              maxLength={16}
+              placeholder="ABCD1234"
+              className="w-full rounded-xl border border-border bg-input px-4 py-2.5 font-mono text-sm uppercase outline-none focus:border-primary focus:ring-2 focus:ring-ring" />
+          </label>
+        )}
 
         {err && (
           <div className="mb-4 rounded-xl px-4 py-2.5 text-sm text-destructive"

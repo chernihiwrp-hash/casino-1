@@ -5,7 +5,7 @@ type AuthCtx = {
   user: DbUser | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, refCode?: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
   updateBalance: (delta: number) => Promise<void>;
@@ -67,22 +67,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data as DbUser);
   };
 
-  const register = async (username: string, password: string) => {
+  const register = async (username: string, password: string, refCode?: string) => {
     const { data: existing } = await supabase
       .from("users")
       .select("id")
       .eq("username", username)
       .maybeSingle();
     if (existing) throw new Error("Имя занято");
+
+    let referrerNick: string | null = null;
+    const code = (refCode ?? "").trim().toUpperCase();
+    if (code) {
+      const { data: ref } = await supabase
+        .from("users")
+        .select("username")
+        .eq("referral_code", code)
+        .maybeSingle();
+      if (ref) referrerNick = (ref as any).username;
+    }
+
+    const myCode = (username + Date.now().toString(36))
+      .replace(/[^A-Za-z0-9]/g, "")
+      .toUpperCase()
+      .slice(0, 8);
+
     const rows = await secureInsertReturning<DbUser>("users", {
       username,
       password,
       balance: 1000,
       role: "player",
       theme: "green",
+      referral_code: myCode,
+      referred_by: referrerNick,
     });
     const data = rows[0];
     if (!data) throw new Error("Не удалось создать пользователя");
+
+    // Реферальная награда сразу
+    if (referrerNick && referrerNick !== username) {
+      try {
+        await secureInsertReturning("referrals", {
+          referrer_nick: referrerNick,
+          referred_nick: username,
+          reward_paid: true,
+        });
+        const { data: refUser } = await supabase
+          .from("users").select("id, balance").eq("username", referrerNick).maybeSingle();
+        if (refUser) {
+          await supabase.from("users")
+            .update({ balance: ((refUser as any).balance ?? 0) + 1200 })
+            .eq("id", (refUser as any).id);
+        }
+      } catch (e) {
+        console.warn("referral reward failed:", e);
+      }
+    }
+
     localStorage.setItem(STORAGE_KEY, String(data.id));
     setUser(data as DbUser);
   };

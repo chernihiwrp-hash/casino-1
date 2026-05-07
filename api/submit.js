@@ -4,6 +4,7 @@ const ALLOWED_TABLES = [
   'users', 'casino_bets', 'transactions', 'promo_codes',
   'promo_uses', 'nft_gifts', 'nft_owners', 'inventory',
   'crypto_holdings', 'crypto_coins', 'banners', 'promotions',
+  'cases', 'trades', 'referrals',
 ];
 
 export default async function handler(req, res) {

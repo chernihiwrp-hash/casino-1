@@ -407,10 +407,25 @@ function RocketGame() {
   const [history, setHistory] = useState<{ val: number; won: boolean }[]>([]);
   const [msg, setMsg] = useState("");
   const [winAmount, setWinAmount] = useState(0);
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [autoTarget, setAutoTarget] = useState<number>(2);
+  const autoFiredRef = useRef(false);
   const raf = useRef<number | null>(null);
   const start = useRef(0);
 
   const balance = user?.balance ?? 0;
+
+  const cashoutAt = async (m: number) => {
+    if (raf.current) cancelAnimationFrame(raf.current);
+    setMult(m);
+    setPhase("cashed");
+    const win = Math.floor(bet * m);
+    setWinAmount(win);
+    try {
+      await updateBalance(win);
+      setHistory(h => [{ val: m, won: true }, ...h].slice(0, 12));
+    } catch (e: any) { setMsg(e.message); }
+  };
 
   const launch = async () => {
     if (bet <= 0 || bet > balance || phase === "flying") return;
@@ -423,6 +438,7 @@ function RocketGame() {
     setCrashAt(target);
     setPhase("flying");
     setMult(1);
+    autoFiredRef.current = false;
     start.current = performance.now();
 
     const tick = (t: number) => {
@@ -434,6 +450,12 @@ function RocketGame() {
         setHistory(h => [{ val: target, won: false }, ...h].slice(0, 12));
         return;
       }
+      // ── Авто-вивод ──
+      if (autoEnabled && !autoFiredRef.current && autoTarget > 1 && m >= autoTarget) {
+        autoFiredRef.current = true;
+        cashoutAt(Math.min(m, target));
+        return;
+      }
       setMult(m);
       raf.current = requestAnimationFrame(tick);
     };
@@ -442,15 +464,7 @@ function RocketGame() {
 
   const cashout = async () => {
     if (phase !== "flying") return;
-    if (raf.current) cancelAnimationFrame(raf.current);
-    const m = mult;
-    setPhase("cashed");
-    const win = Math.floor(bet * m);
-    setWinAmount(win);
-    try {
-      await updateBalance(win);
-      setHistory(h => [{ val: m, won: true }, ...h].slice(0, 12));
-    } catch (e: any) { setMsg(e.message); }
+    await cashoutAt(mult);
   };
 
   const reset = () => { setPhase("idle"); setMult(1); setMsg(""); setWinAmount(0); };
@@ -576,6 +590,26 @@ function RocketGame() {
             className="glass rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-primary/15 disabled:opacity-40 transition">½</button>
           <button onClick={() => setBet(balance)} disabled={phase==="flying"}
             className="glass rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-primary/15 disabled:opacity-40 transition">MAX</button>
+        </div>
+      </div>
+
+      {/* Авто-вивід */}
+      <div className="glass mb-3 flex flex-wrap items-center gap-3 rounded-2xl p-4">
+        <label className="flex items-center gap-2 text-xs font-medium">
+          <input type="checkbox" checked={autoEnabled} disabled={phase === "flying"}
+            onChange={e => setAutoEnabled(e.target.checked)} />
+          Авто-вивід при множнику
+        </label>
+        <input type="number" min={1.01} step={0.1} value={autoTarget}
+          disabled={phase === "flying"}
+          onChange={e => setAutoTarget(Math.max(1.01, Number(e.target.value) || 1.01))}
+          className="w-24 rounded-xl bg-input px-3 py-2 text-center font-mono text-sm outline-none focus:ring-2 focus:ring-ring" />
+        <span className="text-xs text-muted-foreground">x</span>
+        <div className="flex gap-1.5">
+          {[1.5, 2, 3, 5, 10].map(v => (
+            <button key={v} type="button" onClick={() => setAutoTarget(v)} disabled={phase === "flying"}
+              className="glass rounded-lg px-2 py-1 text-[11px] hover:bg-primary/15 disabled:opacity-40">x{v}</button>
+          ))}
         </div>
       </div>
 

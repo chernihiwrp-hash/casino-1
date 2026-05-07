@@ -57,6 +57,37 @@ export type DbUser = {
   password: string | null;
   owned_themes: string[] | null;
   owned_gifts: unknown;
+  favorites: string[] | null;
+  referral_code: string | null;
+  referred_by: string | null;
+  rare_balance: number | null;
+};
+
+export type CaseDef = {
+  id: string;
+  slug: string;
+  name: string;
+  price: number;
+  image_url: string | null;
+  min_price: number;
+  max_price: number;
+  rarity_bias: number;
+  sort_order: number;
+  active: boolean;
+};
+
+export type Trade = {
+  id: string;
+  from_nick: string;
+  to_nick: string;
+  nft_owner_id: string | null;
+  amount_cr: number;
+  amount_rc: number;
+  fee_cr: number;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  message: string | null;
+  created_at: string;
+  resolved_at: string | null;
 };
 
 export type NftGift = {

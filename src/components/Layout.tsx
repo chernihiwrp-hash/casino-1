@@ -2,7 +2,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Particles } from "./Particles";
 import {
-  Rocket, Dices, CircleDot, Package, Sparkles, LogOut, Wallet, Ticket, Coins, Lock,
+  Rocket, Dices, CircleDot, Package, Sparkles, LogOut, Wallet, Ticket, Coins, Lock, User, ArrowLeftRight,
 } from "lucide-react";
 import { useNavLocked } from "@/lib/lock";
 import { useEffect, useState } from "react";
@@ -14,7 +14,9 @@ const NAV = [
   { to: "/cases",     label: "Кейси",    icon: Package },
   { to: "/upgrader",  label: "Апгрейд",  icon: Sparkles },
   { to: "/exchange",  label: "Біржа",    icon: Coins },
+  { to: "/trade",     label: "Трейд",    icon: ArrowLeftRight },
   { to: "/inventory", label: "Інвентар", icon: Wallet },
+  { to: "/profile",   label: "Профіль",  icon: User },
   { to: "/promo",     label: "Промо",    icon: Ticket },
 ];
 

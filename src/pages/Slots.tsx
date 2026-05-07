@@ -376,10 +376,10 @@ function SlotsGame() {
     setPullAnim(true);
     setTimeout(() => setPullAnim(false), 300);
 
-    // RTP ~92%: 5% трійка, 35% пара, 60% програш
+    // Ребаланс: 3% трійка, 25% пара, 72% програш (RTP ~85%)
     const roll = Math.random();
     let finals: SymbolKey[][];
-    if (roll < 0.05) {
+    if (roll < 0.03) {
       // Трійка — рідкісна подія (5%)
       // Звичайні символи частіше, jackpot/seven дуже рідко
       const pickPool: SymbolKey[] = [
@@ -393,18 +393,17 @@ function SlotsGame() {
       ];
       const sym = pickPool[Math.floor(Math.random() * pickPool.length)];
       finals = [spinReelWithMiddle(sym), spinReelWithMiddle(sym), spinReelWithMiddle(sym)];
-    } else if (roll < 0.40) {
-      // Пара (35%) — два однакових символи на середній лінії
+    } else if (roll < 0.28) {
+      // Пара (25%) — два однакових символи
       const sym = randomSymbol();
       const left = Math.random() < 0.5;
-      // Третій символ гарантовано ІНШИЙ щоб не вийшла випадкова трійка
       let other = randomSymbol();
       while (other === sym) other = randomSymbol();
       finals = left
         ? [spinReelWithMiddle(sym),   spinReelWithMiddle(sym),   spinReelWithMiddle(other)]
         : [spinReelWithMiddle(other), spinReelWithMiddle(sym),   spinReelWithMiddle(sym)];
     } else {
-      // Програш (60%) — всі три різні
+      // Програш (72%) — всі три різні
       let s1 = randomSymbol();
       let s2 = randomSymbol(); while (s2 === s1) s2 = randomSymbol();
       let s3 = randomSymbol(); while (s3 === s2) s3 = randomSymbol();

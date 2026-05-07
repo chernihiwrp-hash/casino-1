@@ -352,7 +352,7 @@ export default function ExchangePage() {
     if (!coins.length) return;
     tickRef.current = window.setInterval(() => {
       setCoins((prev) => prev.map((c) => {
-        const chg      = (Math.random() - 0.49) * (c.volatility || 1) * 0.006;
+        const chg      = (Math.random() - 0.46) * (c.volatility || 1) * 0.006;
         const newPrice = Math.max(0.0001, c.price * (1 + chg));
         const newHistory = [
           ...c.history.slice(-(HISTORY_LEN - 1)),
@@ -432,6 +432,29 @@ export default function ExchangePage() {
       setAmountCr(""); await loadHoldings();
     } catch (e: unknown) {
       setMsg(`❌ ${(e as Error)?.message ?? "Помилка"}`);
+    } finally { setBusy(false); }
+  };
+
+  // ── Sell ALL holdings ──────────────────────────────────────────────────────
+  const sellAll = async () => {
+    if (!user || busy) return;
+    if (holdings.length === 0) { setMsg("Портфель порожній"); return; }
+    if (!confirm(`Продати ВСІ активи на ~${portfolioValue.toFixed(2)} CR?`)) return;
+    setBusy(true); setMsg("");
+    try {
+      let total = 0;
+      for (const h of holdings) {
+        const c = coins.find((x) => x.id === h.coin_id);
+        if (!c) continue;
+        const cr = c.price * h.amount;
+        total += cr;
+        await supabase.from("crypto_holdings").delete().eq("id", h.id);
+      }
+      if (total > 0) await updateBalance(Math.floor(total));
+      setMsg(`✅ Продано все: +${Math.floor(total).toLocaleString()} CR`);
+      await loadHoldings();
+    } catch (e: any) {
+      setMsg(`❌ ${e.message ?? "Помилка"}`);
     } finally { setBusy(false); }
   };
 
@@ -613,9 +636,17 @@ export default function ExchangePage() {
 
           {/* Portfolio */}
           <div className="glass-strong rounded-2xl p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <Wallet className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold">Мій портфель</span>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">Мій портфель</span>
+              </div>
+              {holdings.length > 0 && (
+                <button onClick={sellAll} disabled={busy}
+                  className="rounded-lg bg-destructive/15 px-2.5 py-1 text-[11px] font-semibold text-destructive hover:bg-destructive/25 disabled:opacity-40 transition">
+                  Продати ВСЕ
+                </button>
+              )}
             </div>
             {holdings.length === 0 ? (
               <p className="text-center text-xs text-muted-foreground">Поки що порожньо</p>

@@ -14,6 +14,7 @@ import ProfilePage from "@/pages/Profile";
 import AdminPage from "@/pages/Admin";
 import PromoPage from "@/pages/Promo";
 import ExchangePage from "@/pages/Exchange";
+import TradePage from "@/pages/Trade";
 
 function NotFound() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/cases" element={<RequireAuth><CasesPage /></RequireAuth>} />
           <Route path="/upgrader" element={<RequireAuth><UpgraderPage /></RequireAuth>} />
           <Route path="/exchange" element={<RequireAuth><ExchangePage /></RequireAuth>} />
+          <Route path="/trade" element={<RequireAuth><TradePage /></RequireAuth>} />
           <Route path="/inventory" element={<RequireAuth><InventoryPage /></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
           <Route path="/promo" element={<RequireAuth><PromoPage /></RequireAuth>} />

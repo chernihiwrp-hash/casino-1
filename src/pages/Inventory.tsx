@@ -37,6 +37,19 @@ function InventoryPage() {
     }
   };
 
+  const sellAll = async () => {
+    if (!user || busy || items.length === 0) return;
+    if (!confirm(`Продати всі ${items.length} NFT за ~${Math.floor(totalValue * 0.7)} CR?`)) return;
+    setBusy("ALL"); setMsg("");
+    let payout = 0;
+    for (const it of items) {
+      try { await removeOwnedNft(it.ownerRowId); payout += Math.floor(it.price * 0.7); } catch {}
+    }
+    if (payout > 0) await updateBalance(payout);
+    setMsg(`Продано все: +${payout} CR`);
+    await reload(); setBusy(null);
+  };
+
   const totalValue = items.reduce((s, i) => s + i.price, 0);
 
   return (
@@ -48,6 +61,13 @@ function InventoryPage() {
         <Stat label="Сумма" value={`${totalValue.toLocaleString()} CR`} />
         <Stat label="Продажа = 70%" value={`${Math.floor(totalValue * 0.7)} CR`} />
       </div>
+
+      {items.length > 0 && (
+        <button onClick={sellAll} disabled={!!busy}
+          className="mb-3 w-full rounded-xl bg-destructive/15 py-2.5 text-sm font-semibold text-destructive hover:bg-destructive/25 disabled:opacity-40">
+          {busy === "ALL" ? "Продаємо..." : `Продати ВСЕ (~${Math.floor(totalValue * 0.7)} CR)`}
+        </button>
+      )}
 
       {msg && <div className="glass mb-3 rounded-lg p-2 text-center text-sm">{msg}</div>}
 
