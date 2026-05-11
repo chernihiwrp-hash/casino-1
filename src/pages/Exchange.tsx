@@ -3,7 +3,56 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
 import { supabase, secureInsert } from "@/lib/supabase";
 import type { CryptoCoin, CryptoHolding } from "@/lib/crypto-types";
-import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity, AlertTriangle, X } from "lucide-react";
+
+// ─── Confirm Modal ─────────────────────────────────────────────────────────────
+
+type ConfirmModalProps = {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
+function ConfirmModal({ open, title, description, confirmLabel = "Підтвердити", danger = false, onConfirm, onCancel }: ConfirmModalProps) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative glass-strong rounded-2xl p-6 w-full max-w-sm space-y-4 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`rounded-full p-2 ${danger ? "bg-destructive/15" : "bg-primary/15"}`}>
+              <AlertTriangle className={`h-5 w-5 ${danger ? "text-destructive" : "text-primary"}`} />
+            </div>
+            <h2 className="text-base font-bold">{title}</h2>
+          </div>
+          <button onClick={onCancel} className="text-muted-foreground hover:text-foreground transition">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCancel}
+            className="flex-1 rounded-xl border border-border py-2.5 text-sm font-semibold hover:bg-muted/50 transition">
+            Скасувати
+          </button>
+          <button onClick={onConfirm}
+            className={`flex-1 rounded-xl py-2.5 text-sm font-bold transition ${
+              danger
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                : "btn-primary"
+            }`}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -331,6 +380,10 @@ export default function ExchangePage() {
   const [msg, setMsg]           = useState("");
   const [busy, setBusy]         = useState(false);
 
+  // Modals
+  const [sellAllModal, setSellAllModal] = useState(false);
+  const [sellHoldingModal, setSellHoldingModal] = useState<CryptoHolding | null>(null);
+
   const coinsRef = useRef<CoinView[]>([]);
   const tickRef  = useRef<number | null>(null);
   useEffect(() => { coinsRef.current = coins; }, [coins]);
@@ -439,7 +492,12 @@ export default function ExchangePage() {
   const sellAll = async () => {
     if (!user || busy) return;
     if (holdings.length === 0) { setMsg("Портфель порожній"); return; }
-    if (!confirm(`Продати ВСІ активи на ~${portfolioValue.toFixed(2)} CR?`)) return;
+    setSellAllModal(true);
+  };
+
+  const doSellAll = async () => {
+    setSellAllModal(false);
+    if (!user || busy) return;
     setBusy(true); setMsg("");
     try {
       let total = 0;
@@ -458,9 +516,47 @@ export default function ExchangePage() {
     } finally { setBusy(false); }
   };
 
+  // ── Sell single holding ──────────────────────────────────────────────────────
+  const doSellHolding = async (h: CryptoHolding) => {
+    setSellHoldingModal(null);
+    if (!user || busy) return;
+    const c = coins.find((x) => x.id === h.coin_id);
+    if (!c) return;
+    const cr = Math.floor(c.price * h.amount);
+    setBusy(true); setMsg("");
+    try {
+      await supabase.from("crypto_holdings").delete().eq("id", h.id);
+      await updateBalance(cr);
+      setMsg(`✅ Продано ${c.name}: +${cr.toLocaleString()} CR`);
+      await loadHoldings();
+    } catch (e: any) {
+      setMsg(`❌ ${(e as Error)?.message ?? "Помилка"}`);
+    } finally { setBusy(false); }
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div>
+      <ConfirmModal
+        open={sellAllModal}
+        title="Продати всі активи?"
+        description={`Ти отримаєш ~${Math.floor(portfolioValue).toLocaleString()} CR. Усі монети будуть продані за поточним курсом.`}
+        confirmLabel="Продати все"
+        danger
+        onConfirm={doSellAll}
+        onCancel={() => setSellAllModal(false)}
+      />
+
+      <ConfirmModal
+        open={!!sellHoldingModal}
+        title={`Продати ${coins.find(c => c.id === sellHoldingModal?.coin_id)?.name ?? "монету"}?`}
+        description={sellHoldingModal ? `Ти отримаєш ~${Math.floor((coins.find(c => c.id === sellHoldingModal.coin_id)?.price ?? 0) * sellHoldingModal.amount).toLocaleString()} CR за ${sellHoldingModal.amount.toFixed(6)} ${coins.find(c => c.id === sellHoldingModal.coin_id)?.symbol ?? ""}.` : ""}
+        confirmLabel="Продати"
+        danger
+        onConfirm={() => sellHoldingModal && doSellHolding(sellHoldingModal)}
+        onCancel={() => setSellHoldingModal(null)}
+      />
+
       <PageHeader title="Крипто Біржа" subtitle="Купуй та продавай монети у реальному часі" />
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
 
@@ -659,22 +755,27 @@ export default function ExchangePage() {
                   const pl    = (c.price - h.avg_price) * h.amount;
                   const plPct = ((c.price - h.avg_price) / h.avg_price) * 100;
                   return (
-                    <button key={h.id} onClick={() => setSelectedId(c.id)}
-                      className="glass flex w-full items-center gap-3 rounded-xl p-2.5 text-left hover:bg-primary/5">
-                      <img src={c.image_url} alt={c.symbol} className="h-8 w-8 rounded-full" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold">{c.name}</p>
-                        <p className="font-mono text-[10px] text-muted-foreground">
-                          {h.amount.toFixed(6)} {c.symbol}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-mono text-xs">{val.toFixed(2)} CR</p>
-                        <p className={`font-mono text-[10px] ${pl >= 0 ? "text-primary" : "text-destructive"}`}>
-                          {pl >= 0 ? "+" : ""}{plPct.toFixed(1)}%
-                        </p>
-                      </div>
-                    </button>
+                    <div key={h.id} className="glass flex w-full items-center gap-3 rounded-xl p-2.5 text-left hover:bg-primary/5">
+                      <button onClick={() => setSelectedId(c.id)} className="flex items-center gap-3 flex-1 min-w-0">
+                        <img src={c.image_url} alt={c.symbol} className="h-8 w-8 rounded-full shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold">{c.name}</p>
+                          <p className="font-mono text-[10px] text-muted-foreground">
+                            {h.amount.toFixed(6)} {c.symbol}
+                          </p>
+                        </div>
+                        <div className="text-right mr-2">
+                          <p className="font-mono text-xs">{val.toFixed(2)} CR</p>
+                          <p className={`font-mono text-[10px] ${pl >= 0 ? "text-primary" : "text-destructive"}`}>
+                            {pl >= 0 ? "+" : ""}{plPct.toFixed(1)}%
+                          </p>
+                        </div>
+                      </button>
+                      <button onClick={() => setSellHoldingModal(h)} disabled={busy}
+                        className="shrink-0 rounded-lg bg-destructive/15 px-2 py-1.5 text-[10px] font-semibold text-destructive hover:bg-destructive/25 disabled:opacity-40 transition">
+                        Продати
+                      </button>
+                    </div>
                   );
                 })}
               </div>

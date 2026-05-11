@@ -3,53 +3,93 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
 import { supabase, secureInsert } from "@/lib/supabase";
 import { useUserNfts } from "@/lib/nft";
-import { ArrowLeftRight } from "lucide-react";
+import {
+  ArrowLeftRight, Send, CheckCircle, XCircle, Clock, PackageSearch, Coins, User,
+} from "lucide-react";
 
-const FEE_PCT = 5; // 5% комиссия
+const FEE_PCT = 5;
+
+type Trade = {
+  id: string;
+  from_nick: string;
+  to_nick: string;
+  nft_owner_id: string | null;
+  amount_cr: number;
+  fee_cr: number;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  created_at: string;
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending:  { label: "Очікує",    cls: "bg-yellow-500/15 text-yellow-400" },
+    accepted: { label: "Прийнято",  cls: "bg-primary/15 text-primary" },
+    declined: { label: "Відхилено", cls: "bg-destructive/15 text-destructive" },
+    cancelled:{ label: "Скасовано", cls: "bg-muted text-muted-foreground" },
+  };
+  const s = map[status] ?? map.pending;
+  return (
+    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${s.cls}`}>
+      {s.label}
+    </span>
+  );
+}
 
 export default function TradePage() {
   const { user, updateBalance, refresh } = useAuth();
   const { items, reload } = useUserNfts(user?.username);
-  const [toNick, setToNick] = useState("");
+
+  const [toNick, setToNick]     = useState("");
   const [amountCr, setAmountCr] = useState("");
   const [nftRowId, setNftRowId] = useState("");
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [incoming, setIncoming] = useState<any[]>([]);
-  const [outgoing, setOutgoing] = useState<any[]>([]);
+  const [msg, setMsg]           = useState("");
+  const [busy, setBusy]         = useState(false);
+  const [incoming, setIncoming] = useState<Trade[]>([]);
+  const [outgoing, setOutgoing] = useState<Trade[]>([]);
+  const [tab, setTab]           = useState<"new" | "inbox" | "sent">("new");
 
   const loadTrades = useCallback(async () => {
     if (!user) return;
-    const { data: inc } = await supabase.from("trades").select("*").eq("to_nick", user.username).eq("status", "pending").order("created_at", { ascending: false });
-    const { data: out } = await supabase.from("trades").select("*").eq("from_nick", user.username).order("created_at", { ascending: false }).limit(20);
-    setIncoming(inc ?? []); setOutgoing(out ?? []);
+    const { data: inc } = await supabase
+      .from("trades").select("*")
+      .eq("to_nick", user.username).eq("status", "pending")
+      .order("created_at", { ascending: false });
+    const { data: out } = await supabase
+      .from("trades").select("*")
+      .eq("from_nick", user.username)
+      .order("created_at", { ascending: false }).limit(30);
+    setIncoming((inc ?? []) as Trade[]);
+    setOutgoing((out ?? []) as Trade[]);
   }, [user]);
+
   useEffect(() => { loadTrades(); }, [loadTrades]);
+
+  const crNum = Number(amountCr) || 0;
+  const fee   = crNum > 0 ? Math.ceil(crNum * FEE_PCT / 100) : 0;
 
   const send = async () => {
     if (!user || busy) return;
-    const cr = Number(amountCr) || 0;
-    if (!toNick.trim()) return setMsg("Вкажи нік отримувача");
-    if (toNick.trim() === user.username) return setMsg("Не можна собі");
-    if (cr <= 0 && !nftRowId) return setMsg("Додай CR або NFT");
+    if (!toNick.trim())                  return setMsg("Вкажи нік отримувача");
+    if (toNick.trim() === user.username) return setMsg("Не можна надіслати самому собі");
+    if (crNum <= 0 && !nftRowId)         return setMsg("Додай CR або обери NFT");
     setBusy(true); setMsg("");
     try {
-      const { data: target } = await supabase.from("users").select("id").eq("username", toNick.trim()).maybeSingle();
+      const { data: target } = await supabase
+        .from("users").select("id").eq("username", toNick.trim()).maybeSingle();
       if (!target) throw new Error("Користувача не знайдено");
-      const fee = Math.ceil(cr * FEE_PCT / 100);
-      if ((user.balance ?? 0) < cr + fee) throw new Error(`Потрібно ${cr + fee} CR (з комісією ${fee})`);
-      // списуємо
-      if (cr + fee > 0) await updateBalance(-(cr + fee));
+      if ((user.balance ?? 0) < crNum + fee)
+        throw new Error(`Потрібно ${(crNum + fee).toLocaleString()} CR (включно з комісією ${fee} CR)`);
+      if (crNum + fee > 0) await updateBalance(-(crNum + fee));
       await secureInsert("trades", {
-        from_nick: user.username,
-        to_nick: toNick.trim(),
+        from_nick:    user.username,
+        to_nick:      toNick.trim(),
         nft_owner_id: nftRowId || null,
-        amount_cr: cr,
-        amount_rc: 0,
-        fee_cr: fee,
-        status: "pending",
+        amount_cr:    crNum,
+        amount_rc:    0,
+        fee_cr:       fee,
+        status:       "pending",
       });
-      setMsg(`✅ Запит надіслано (комісія ${fee} CR)`);
+      setMsg("✅ Запит надіслано!");
       setAmountCr(""); setNftRowId(""); setToNick("");
       await loadTrades();
     } catch (e: any) {
@@ -57,83 +97,230 @@ export default function TradePage() {
     } finally { setBusy(false); }
   };
 
-  const accept = async (t: any) => {
-    if (!user) return;
+  const accept = async (t: Trade) => {
+    if (!user || busy) return;
     setBusy(true);
     try {
-      // отримати CR
       if (t.amount_cr > 0) await updateBalance(t.amount_cr);
-      // переписати NFT
       if (t.nft_owner_id) {
-        await supabase.from("nft_owners").update({ owner_nick: user.username }).eq("id", t.nft_owner_id);
+        await supabase.from("nft_owners")
+          .update({ owner_nick: user.username }).eq("id", t.nft_owner_id);
       }
-      await supabase.from("trades").update({ status: "accepted", resolved_at: new Date().toISOString() }).eq("id", t.id);
+      await supabase.from("trades")
+        .update({ status: "accepted", resolved_at: new Date().toISOString() })
+        .eq("id", t.id);
       await loadTrades(); await reload(); await refresh();
     } finally { setBusy(false); }
   };
 
-  const decline = async (t: any) => {
-    if (!user) return;
-    // повернути CR відправнику
-    if (t.amount_cr > 0 || t.fee_cr > 0) {
-      const { data: sender } = await supabase.from("users").select("id, balance").eq("username", t.from_nick).maybeSingle();
-      if (sender) {
-        await supabase.from("users").update({ balance: ((sender as any).balance ?? 0) + t.amount_cr + t.fee_cr }).eq("id", (sender as any).id);
+  const decline = async (t: Trade) => {
+    if (!user || busy) return;
+    setBusy(true);
+    try {
+      if (t.amount_cr > 0 || t.fee_cr > 0) {
+        const { data: sender } = await supabase
+          .from("users").select("id, balance").eq("username", t.from_nick).maybeSingle();
+        if (sender) {
+          await supabase.from("users")
+            .update({ balance: ((sender as any).balance ?? 0) + t.amount_cr + t.fee_cr })
+            .eq("id", (sender as any).id);
+        }
       }
-    }
-    await supabase.from("trades").update({ status: "declined", resolved_at: new Date().toISOString() }).eq("id", t.id);
-    await loadTrades();
+      await supabase.from("trades")
+        .update({ status: "declined", resolved_at: new Date().toISOString() })
+        .eq("id", t.id);
+      await loadTrades();
+    } finally { setBusy(false); }
   };
 
+  const selectedNft = items.find(i => i.ownerRowId === nftRowId);
+
   return (
-    <div>
-      <PageHeader title="Трейд" subtitle={`Обмін NFT та CR · комісія ${FEE_PCT}%`} />
+    <div className="space-y-4">
+      <PageHeader title="Трейди" subtitle={`P2P обмін NFT та CR · комісія ${FEE_PCT}%`} />
 
-      <div className="glass-strong mb-4 rounded-2xl p-4 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-semibold"><ArrowLeftRight className="h-4 w-4 text-primary" /> Новий запит</div>
-        <input value={toNick} onChange={e => setToNick(e.target.value)} placeholder="Нік отримувача"
-          className="w-full rounded-xl bg-input px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" />
-        <input type="number" value={amountCr} onChange={e => setAmountCr(e.target.value)} placeholder="CR (опціонально)"
-          className="w-full rounded-xl bg-input px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-ring" />
-        <select value={nftRowId} onChange={e => setNftRowId(e.target.value)}
-          className="w-full rounded-xl bg-input px-3 py-2 text-sm outline-none">
-          <option value="">— без NFT —</option>
-          {items.map(i => <option key={i.ownerRowId} value={i.ownerRowId}>{i.name} ({i.price} CR)</option>)}
-        </select>
-        <button onClick={send} disabled={busy} className="btn-primary w-full rounded-xl py-2.5 text-sm font-semibold">
-          {busy ? "..." : "Надіслати запит"}
-        </button>
-        {msg && <div className="rounded-xl px-3 py-2 text-center text-xs">{msg}</div>}
-      </div>
-
-      <div className="glass-strong mb-4 rounded-2xl p-4">
-        <div className="mb-3 text-sm font-semibold">Вхідні запити ({incoming.length})</div>
-        {incoming.length === 0 ? <p className="text-xs text-muted-foreground">Немає</p> : incoming.map(t => (
-          <div key={t.id} className="glass mb-2 flex items-center gap-2 rounded-xl p-3">
-            <div className="flex-1 text-xs">
-              <div className="font-semibold">{t.from_nick}</div>
-              <div className="text-muted-foreground">+{t.amount_cr} CR{t.nft_owner_id ? " + NFT" : ""}</div>
-            </div>
-            <button onClick={() => accept(t)} disabled={busy} className="btn-primary rounded-lg px-3 py-1.5 text-xs">Прийняти</button>
-            <button onClick={() => decline(t)} disabled={busy} className="rounded-lg bg-destructive/15 px-3 py-1.5 text-xs text-destructive">×</button>
-          </div>
+      {/* Tabs */}
+      <div className="glass-strong flex rounded-2xl p-1 gap-1">
+        {([
+          { key: "new",   label: "Новий",   icon: <Send className="h-3.5 w-3.5" /> },
+          { key: "inbox", label: `Вхідні${incoming.length ? ` (${incoming.length})` : ""}`, icon: <ArrowLeftRight className="h-3.5 w-3.5" /> },
+          { key: "sent",  label: "Надіслані", icon: <Clock className="h-3.5 w-3.5" /> },
+        ] as const).map(({ key, label, icon }) => (
+          <button key={key} onClick={() => setTab(key)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-semibold transition-all"
+            style={{
+              background: tab === key ? "var(--gradient-primary)" : "transparent",
+              color:      tab === key ? "var(--primary-foreground)" : "var(--muted-foreground)",
+              boxShadow:  tab === key ? "var(--shadow-glow)" : "none",
+            }}>
+            {icon}{label}
+          </button>
         ))}
       </div>
 
-      <div className="glass-strong rounded-2xl p-4">
-        <div className="mb-3 text-sm font-semibold">Мої запити</div>
-        {outgoing.length === 0 ? <p className="text-xs text-muted-foreground">Немає</p> : outgoing.map(t => (
-          <div key={t.id} className="glass mb-2 flex items-center gap-2 rounded-xl p-3 text-xs">
-            <div className="flex-1">
-              <div className="font-semibold">→ {t.to_nick}</div>
-              <div className="text-muted-foreground">{t.amount_cr} CR (комісія {t.fee_cr})</div>
-            </div>
-            <span className={`rounded px-2 py-1 text-[10px] ${t.status === "accepted" ? "bg-primary/15 text-primary" : t.status === "declined" ? "bg-destructive/15 text-destructive" : "bg-muted"}`}>
-              {t.status}
-            </span>
+      {/* NEW TRADE */}
+      {tab === "new" && (
+        <div className="glass-strong rounded-2xl p-5 space-y-4">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <Send className="h-4 w-4 text-primary" /> Новий запит
           </div>
-        ))}
-      </div>
+
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+              <User className="h-3.5 w-3.5" /> Отримувач
+            </label>
+            <input value={toNick} onChange={e => setToNick(e.target.value)}
+              placeholder="Введи нік..."
+              className="w-full rounded-xl bg-input px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring transition" />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+                <Coins className="h-3.5 w-3.5" /> Сума CR
+              </span>
+              <button className="text-[11px] text-primary hover:underline"
+                onClick={() => setAmountCr(String(Math.floor(user?.balance ?? 0)))}>
+                MAX ({(user?.balance ?? 0).toLocaleString()})
+              </button>
+            </label>
+            <input type="number" value={amountCr} onChange={e => setAmountCr(e.target.value)}
+              placeholder="0"
+              className="w-full rounded-xl bg-input px-4 py-3 font-mono text-sm outline-none focus:ring-2 focus:ring-ring transition" />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+              <PackageSearch className="h-3.5 w-3.5" /> NFT (необов'язково)
+            </label>
+            <select value={nftRowId} onChange={e => setNftRowId(e.target.value)}
+              className="w-full rounded-xl bg-input px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring transition">
+              <option value="">— без NFT —</option>
+              {items.map(i => (
+                <option key={i.ownerRowId} value={i.ownerRowId}>
+                  {i.name} · {i.price.toLocaleString()} CR
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(crNum > 0 || selectedNft) && (
+            <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-1.5 text-xs">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Підсумок</div>
+              {crNum > 0 && (
+                <>
+                  <div className="flex justify-between"><span>CR до відправки</span><span className="font-mono font-bold">{crNum.toLocaleString()}</span></div>
+                  <div className="flex justify-between text-muted-foreground"><span>Комісія {FEE_PCT}%</span><span className="font-mono">{fee.toLocaleString()}</span></div>
+                  <div className="flex justify-between border-t border-border/50 pt-1.5 font-semibold">
+                    <span>Разом з тебе</span>
+                    <span className="font-mono text-destructive">{(crNum + fee).toLocaleString()} CR</span>
+                  </div>
+                </>
+              )}
+              {selectedNft && (
+                <div className="flex justify-between pt-1 border-t border-border/50">
+                  <span>NFT</span>
+                  <span className="font-semibold truncate max-w-[60%] text-right">{selectedNft.name}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <button onClick={send} disabled={busy}
+            className="btn-primary flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold disabled:opacity-40">
+            <Send className="h-4 w-4" />
+            {busy ? "Надсилаємо..." : "Надіслати запит"}
+          </button>
+
+          {msg && (
+            <div className={`rounded-xl px-4 py-3 text-center text-sm font-medium ${
+              msg.startsWith("✅") ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"
+            }`}>{msg}</div>
+          )}
+        </div>
+      )}
+
+      {/* INBOX */}
+      {tab === "inbox" && (
+        <div className="space-y-3">
+          {incoming.length === 0 ? (
+            <div className="glass rounded-2xl p-10 text-center text-muted-foreground text-sm">
+              <ArrowLeftRight className="mx-auto mb-3 h-8 w-8 opacity-30" />
+              Вхідних запитів немає
+            </div>
+          ) : incoming.map(t => (
+            <div key={t.id} className="glass-strong rounded-2xl p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-9 w-9 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
+                    {t.from_nick[0]?.toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold">{t.from_nick}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {new Date(t.created_at).toLocaleString("uk-UA")}
+                    </p>
+                  </div>
+                </div>
+                <StatusBadge status={t.status} />
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs rounded-xl bg-muted/30 p-3">
+                {t.amount_cr > 0 && (
+                  <div className="flex items-center gap-1.5 text-primary font-semibold">
+                    <Coins className="h-3.5 w-3.5" />
+                    +{t.amount_cr.toLocaleString()} CR
+                  </div>
+                )}
+                {t.nft_owner_id && (
+                  <div className="flex items-center gap-1.5 text-yellow-400 font-semibold">
+                    <PackageSearch className="h-3.5 w-3.5" />
+                    + NFT
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={() => accept(t)} disabled={busy}
+                  className="btn-primary flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold disabled:opacity-40">
+                  <CheckCircle className="h-3.5 w-3.5" /> Прийняти
+                </button>
+                <button onClick={() => decline(t)} disabled={busy}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-destructive/15 px-4 py-2.5 text-xs font-bold text-destructive hover:bg-destructive/25 disabled:opacity-40 transition">
+                  <XCircle className="h-3.5 w-3.5" /> Відхилити
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* SENT */}
+      {tab === "sent" && (
+        <div className="space-y-2">
+          {outgoing.length === 0 ? (
+            <div className="glass rounded-2xl p-10 text-center text-muted-foreground text-sm">
+              <Clock className="mx-auto mb-3 h-8 w-8 opacity-30" />
+              Ти ще не надсилав запитів
+            </div>
+          ) : outgoing.map(t => (
+            <div key={t.id} className="glass rounded-2xl p-3.5 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
+                {t.to_nick[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">→ {t.to_nick}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t.amount_cr > 0 ? `${t.amount_cr.toLocaleString()} CR` : ""}
+                  {t.nft_owner_id ? " + NFT" : ""}
+                  {t.fee_cr > 0 ? ` · комісія ${t.fee_cr} CR` : ""}
+                </p>
+              </div>
+              <StatusBadge status={t.status} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
