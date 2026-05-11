@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
-import { supabase, secureInsert } from "@/lib/supabase";
+import { supabase, secureInsert, secureUpdate, secureDelete } from "@/lib/supabase";
 import type { CryptoCoin, CryptoHolding } from "@/lib/crypto-types";
-import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity, AlertTriangle, X } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity, AlertTriangle, X, CheckCircle2, XCircle } from "lucide-react";
 
 // ─── Confirm Modal ─────────────────────────────────────────────────────────────
 
@@ -378,6 +378,7 @@ export default function ExchangePage() {
   const [side, setSide]         = useState<"buy" | "sell">("buy");
   const [amountCr, setAmountCr] = useState("");
   const [msg, setMsg]           = useState("");
+  const [msgType, setMsgType]   = useState<"ok" | "err">("ok");
   const [busy, setBusy]         = useState(false);
 
   // Modals
@@ -443,7 +444,7 @@ export default function ExchangePage() {
   const trade = async () => {
     if (!user || !selected || busy) return;
     const cr = Number(amountCr);
-    if (!cr || cr <= 0) { setMsg("Введи суму CR"); return; }
+    if (!cr || cr <= 0) { setMsg("Введи суму CR"); setMsgType("err"); return; }
     setBusy(true); setMsg("");
     try {
       if (side === "buy") {
@@ -452,10 +453,11 @@ export default function ExchangePage() {
         await updateBalance(-cr);
         if (holding) {
           const na = holding.amount + coins_;
-          const { error } = await supabase.from("crypto_holdings")
-            .update({ amount: na, avg_price: (holding.amount * holding.avg_price + cr) / na, updated_at: new Date().toISOString() })
-            .eq("id", holding.id);
-          if (error) throw new Error(error.message);
+          await secureUpdate(
+            "crypto_holdings",
+            { amount: na, avg_price: (holding.amount * holding.avg_price + cr) / na, updated_at: new Date().toISOString() },
+            { id: holding.id },
+          );
         } else {
           await secureInsert("crypto_holdings", {
             username: user.username,
@@ -464,7 +466,8 @@ export default function ExchangePage() {
             avg_price: selected.price,
           });
         }
-        setMsg(`✅ Куплено ${(cr / selected.price).toFixed(6)} ${selected.symbol}`);
+        setMsg(`Куплено ${(cr / selected.price).toFixed(6)} ${selected.symbol}`);
+        setMsgType("ok");
       } else {
         if (!holding || holding.amount <= 0) throw new Error("Немає монет для продажу");
         const sellCoins = cr / selected.price;
@@ -473,18 +476,21 @@ export default function ExchangePage() {
         await updateBalance(cr);
         const na = holding.amount - sellCoins;
         if (na < 1e-9) {
-          const { error } = await supabase.from("crypto_holdings").delete().eq("id", holding.id);
-          if (error) throw new Error(error.message);
+          await secureDelete("crypto_holdings", { id: holding.id });
         } else {
-          const { error } = await supabase.from("crypto_holdings")
-            .update({ amount: na, updated_at: new Date().toISOString() }).eq("id", holding.id);
-          if (error) throw new Error(error.message);
+          await secureUpdate(
+            "crypto_holdings",
+            { amount: na, updated_at: new Date().toISOString() },
+            { id: holding.id },
+          );
         }
-        setMsg(`✅ Продано ${sellCoins.toFixed(6)} ${selected.symbol}`);
+        setMsg(`Продано ${sellCoins.toFixed(6)} ${selected.symbol}`);
+        setMsgType("ok");
       }
       setAmountCr(""); await loadHoldings();
     } catch (e: unknown) {
-      setMsg(`❌ ${(e as Error)?.message ?? "Помилка"}`);
+      setMsg((e as Error)?.message ?? "Помилка");
+      setMsgType("err");
     } finally { setBusy(false); }
   };
 
@@ -506,13 +512,15 @@ export default function ExchangePage() {
         if (!c) continue;
         const cr = c.price * h.amount;
         total += cr;
-        await supabase.from("crypto_holdings").delete().eq("id", h.id);
+        await secureDelete("crypto_holdings", { id: h.id });
       }
       if (total > 0) await updateBalance(Math.floor(total));
-      setMsg(`✅ Продано все: +${Math.floor(total).toLocaleString()} CR`);
+      setMsg(`Продано все: +${Math.floor(total).toLocaleString()} CR`);
+      setMsgType("ok");
       await loadHoldings();
     } catch (e: any) {
-      setMsg(`❌ ${e.message ?? "Помилка"}`);
+      setMsg(e.message ?? "Помилка");
+      setMsgType("err");
     } finally { setBusy(false); }
   };
 
@@ -525,12 +533,14 @@ export default function ExchangePage() {
     const cr = Math.floor(c.price * h.amount);
     setBusy(true); setMsg("");
     try {
-      await supabase.from("crypto_holdings").delete().eq("id", h.id);
+      await secureDelete("crypto_holdings", { id: h.id });
       await updateBalance(cr);
-      setMsg(`✅ Продано ${c.name}: +${cr.toLocaleString()} CR`);
+      setMsg(`Продано ${c.name}: +${cr.toLocaleString()} CR`);
+      setMsgType("ok");
       await loadHoldings();
     } catch (e: any) {
-      setMsg(`❌ ${(e as Error)?.message ?? "Помилка"}`);
+      setMsg((e as Error)?.message ?? "Помилка");
+      setMsgType("err");
     } finally { setBusy(false); }
   };
 
@@ -719,8 +729,11 @@ export default function ExchangePage() {
                 </button>
 
                 {msg && (
-                  <div className={`rounded-xl px-3 py-2 text-center text-xs
-                    ${msg.startsWith("✅") ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"}`}>
+                  <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-medium
+                    ${msgType === "ok" ? "bg-primary/15 text-primary" : "bg-destructive/15 text-destructive"}`}>
+                    {msgType === "ok"
+                      ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      : <XCircle className="h-3.5 w-3.5 shrink-0" />}
                     {msg}
                   </div>
                 )}
