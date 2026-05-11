@@ -26,6 +26,20 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Table not allowed' });
   }
 
+  // DELETE operation via service_role
+  if (operation === 'delete') {
+    if (!match || typeof match !== 'object' || Object.keys(match).length === 0) {
+      return res.status(400).json({ error: 'match is required for delete' });
+    }
+    let query = supabaseAdmin.from(table).delete();
+    for (const [col, val] of Object.entries(match)) {
+      query = query.eq(col, val);
+    }
+    const { error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true });
+  }
+
   // UPDATE operation via service_role
   if (operation === 'update') {
     if (!match || typeof match !== 'object' || Object.keys(match).length === 0) {
