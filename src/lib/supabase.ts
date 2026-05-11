@@ -44,6 +44,30 @@ export async function secureInsertReturning<T = unknown>(
   return (json.data ?? []) as T[];
 }
 
+// ✅ БЕЗОПАСНЫЙ UPDATE через серверный эндпоинт с service_role ключом.
+// match — объект вида { id: "abc" } (условие WHERE)
+export async function secureUpdate(
+  table: string,
+  data: unknown,
+  match: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, data, match, operation: "update" }),
+  });
+  if (!res.ok) {
+    let msg = "Update failed";
+    try {
+      const err = await res.json();
+      msg = err.error || msg;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
+  }
+}
+
 export type DbUser = {
   id: number;
   username: string;
