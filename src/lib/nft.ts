@@ -57,3 +57,9 @@ export async function removeOwnedNft(ownerRowId: string) {
   const { error } = await supabase.from("nft_owners").delete().eq("id", ownerRowId);
   if (error) throw new Error(error.message);
 }
+
+import { secureDelete } from "./supabase";
+
+export async function removeOwnedNftSecure(ownerRowId: string) {
+  await secureDelete("nft_owners", { id: ownerRowId });
+}
