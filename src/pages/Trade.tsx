@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
-import { supabase, secureInsert } from "@/lib/supabase";
+import { supabase, secureInsert, secureUpdate } from "@/lib/supabase";
 import { useUserNfts } from "@/lib/nft";
 import {
-  ArrowLeftRight, Send, CheckCircle, XCircle, Clock, PackageSearch, Coins, User,
+  ArrowLeftRight, Send, CheckCircle, XCircle, Clock, PackageSearch, Coins, User, ChevronDown,
 } from "lucide-react";
 
 const FEE_PCT = 5;
@@ -46,6 +46,7 @@ export default function TradePage() {
   const [busy, setBusy]         = useState(false);
   const [incoming, setIncoming] = useState<Trade[]>([]);
   const [outgoing, setOutgoing] = useState<Trade[]>([]);
+  const [nftPickerOpen, setNftPickerOpen] = useState(false);
   const [tab, setTab]           = useState<"new" | "inbox" | "sent">("new");
 
   const loadTrades = useCallback(async () => {
@@ -103,12 +104,9 @@ export default function TradePage() {
     try {
       if (t.amount_cr > 0) await updateBalance(t.amount_cr);
       if (t.nft_owner_id) {
-        await supabase.from("nft_owners")
-          .update({ owner_nick: user.username }).eq("id", t.nft_owner_id);
+        await secureUpdate("nft_owners", { owner_nick: user.username }, { id: t.nft_owner_id });
       }
-      await supabase.from("trades")
-        .update({ status: "accepted", resolved_at: new Date().toISOString() })
-        .eq("id", t.id);
+      await secureUpdate("trades", { status: "accepted", resolved_at: new Date().toISOString() }, { id: t.id });
       await loadTrades(); await reload(); await refresh();
     } finally { setBusy(false); }
   };
@@ -121,14 +119,14 @@ export default function TradePage() {
         const { data: sender } = await supabase
           .from("users").select("id, balance").eq("username", t.from_nick).maybeSingle();
         if (sender) {
-          await supabase.from("users")
-            .update({ balance: ((sender as any).balance ?? 0) + t.amount_cr + t.fee_cr })
-            .eq("id", (sender as any).id);
+          await secureUpdate(
+            "users",
+            { balance: ((sender as any).balance ?? 0) + t.amount_cr + t.fee_cr },
+            { id: (sender as any).id },
+          );
         }
       }
-      await supabase.from("trades")
-        .update({ status: "declined", resolved_at: new Date().toISOString() })
-        .eq("id", t.id);
+      await secureUpdate("trades", { status: "declined", resolved_at: new Date().toISOString() }, { id: t.id });
       await loadTrades();
     } finally { setBusy(false); }
   };
@@ -193,15 +191,81 @@ export default function TradePage() {
             <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
               <PackageSearch className="h-3.5 w-3.5" /> NFT (необов'язково)
             </label>
-            <select value={nftRowId} onChange={e => setNftRowId(e.target.value)}
-              className="w-full rounded-xl bg-input px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring transition">
-              <option value="">— без NFT —</option>
-              {items.map(i => (
-                <option key={i.ownerRowId} value={i.ownerRowId}>
-                  {i.name} · {i.price.toLocaleString()} CR
-                </option>
-              ))}
-            </select>
+
+            {/* Selected NFT or trigger button */}
+            <button
+              type="button"
+              onClick={() => setNftPickerOpen(v => !v)}
+              className="w-full rounded-xl bg-input px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring transition flex items-center gap-3 text-left"
+            >
+              {selectedNft ? (
+                <>
+                  <img
+                    src={selectedNft.image_url}
+                    alt={selectedNft.name}
+                    className="h-10 w-10 rounded-lg object-cover flex-shrink-0 border border-border/50"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate text-sm">{selectedNft.name}</p>
+                    <p className="text-xs text-primary font-mono">{selectedNft.price.toLocaleString()} CR</p>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${nftPickerOpen ? "rotate-180" : ""}`} />
+                </>
+              ) : (
+                <>
+                  <div className="h-10 w-10 rounded-lg bg-muted/50 flex items-center justify-center flex-shrink-0">
+                    <PackageSearch className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span className="text-muted-foreground flex-1">— без NFT —</span>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${nftPickerOpen ? "rotate-180" : ""}`} />
+                </>
+              )}
+            </button>
+
+            {/* Dropdown list */}
+            {nftPickerOpen && (
+              <div className="rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+                {/* None option */}
+                <button
+                  type="button"
+                  onClick={() => { setNftRowId(""); setNftPickerOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/50 transition text-left border-b border-border/50 ${!nftRowId ? "bg-primary/10" : ""}`}
+                >
+                  <div className="h-10 w-10 rounded-lg bg-muted/50 flex items-center justify-center flex-shrink-0">
+                    <PackageSearch className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span className="text-muted-foreground font-medium">— без NFT —</span>
+                  {!nftRowId && <CheckCircle className="h-4 w-4 text-primary ml-auto" />}
+                </button>
+
+                {/* NFT items */}
+                <div className="max-h-64 overflow-y-auto divide-y divide-border/30">
+                  {items.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                      У тебе немає NFT
+                    </div>
+                  ) : items.map(i => (
+                    <button
+                      key={i.ownerRowId}
+                      type="button"
+                      onClick={() => { setNftRowId(i.ownerRowId); setNftPickerOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/50 transition text-left ${nftRowId === i.ownerRowId ? "bg-primary/10" : ""}`}
+                    >
+                      <img
+                        src={i.image_url}
+                        alt={i.name}
+                        className="h-10 w-10 rounded-lg object-cover flex-shrink-0 border border-border/50"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate">{i.name}</p>
+                        <p className="text-xs text-primary font-mono">{i.price.toLocaleString()} CR</p>
+                      </div>
+                      {nftRowId === i.ownerRowId && <CheckCircle className="h-4 w-4 text-primary ml-auto flex-shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {(crNum > 0 || selectedNft) && (
