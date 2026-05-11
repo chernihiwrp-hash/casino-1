@@ -68,6 +68,26 @@ export async function secureUpdate(
   }
 }
 
+// ✅ БЕЗОПАСНЫЙ DELETE через серверный эндпоинт с service_role ключом.
+export async function secureDelete(
+  table: string,
+  match: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, match, operation: "delete" }),
+  });
+  if (!res.ok) {
+    let msg = "Delete failed";
+    try {
+      const err = await res.json();
+      msg = err.error || msg;
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+}
+
 export type DbUser = {
   id: number;
   username: string;
