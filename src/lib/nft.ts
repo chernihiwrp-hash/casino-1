@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase, NftGift, secureInsert } from "./supabase";
+import { supabase, secureSelect, secureDelete, NftGift, secureInsert } from "./supabase";
 
 export function useNftPool() {
   const [pool, setPool] = useState<NftGift[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    supabase.from("nft_gifts").select("*").order("price", { ascending: true })
+    secureSelect("nft_gifts", { order: { col: "price", asc: true } }).then(data => ({ data, error: null })).catch(e => ({ data: null, error: e }))
       .then(({ data }) => { setPool((data as NftGift[]) ?? []); setLoading(false); });
   }, []);
   return { pool, loading };
@@ -54,7 +54,7 @@ export async function giveNftToUser(username: string, nftId: string) {
 }
 
 export async function removeOwnedNft(ownerRowId: string) {
-  const { error } = await supabase.from("nft_owners").delete().eq("id", ownerRowId);
+  await secureDelete("nft_owners", { id: ownerRowId }); const error = null;
   if (error) throw new Error(error.message);
 }
 
