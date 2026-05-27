@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
-import { supabase, secureInsert, secureUpdate, secureDelete } from "@/lib/supabase";
+import { supabase, secureSelect, secureUpdate, secureInsert, secureUpdate, secureDelete } from "@/lib/supabase";
 import type { CryptoCoin, CryptoHolding } from "@/lib/crypto-types";
 import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity, AlertTriangle, X, CheckCircle2, XCircle } from "lucide-react";
 
@@ -421,7 +421,9 @@ export default function ExchangePage() {
   // ── Holdings ────────────────────────────────────────────────────────────────
   const loadHoldings = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase.from("crypto_holdings").select("*").eq("username", user.username);
+    const data = await secureSelect("crypto_holdings", {
+      filters: [{ col: "username", op: "eq", value: user.username }],
+    });
     setHoldings((data ?? []) as CryptoHolding[]);
   }, [user]);
   useEffect(() => { loadHoldings(); }, [loadHoldings]);
