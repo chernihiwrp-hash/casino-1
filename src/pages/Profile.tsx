@@ -1,7 +1,7 @@
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
 import { useUserNfts } from "@/lib/nft";
-import { supabase, secureUpdate, secureSelect, secureUpdate, secureSelect } from from "@/lib/supabase";
+import { secureUpdate, secureSelect } from "@/lib/supabase";
 import { Wallet, Calendar, LogOut, Star, Award, Settings, Palette, Check, Gift, Copy, Link2 } from "lucide-react";
 import { useState } from "react";
 
