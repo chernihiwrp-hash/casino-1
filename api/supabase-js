@@ -1,103 +1,185 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from "@supabase/supabase-js";
 
-const ALLOWED_TABLES = [
-  'users', 'casino_bets', 'transactions', 'promo_codes',
-  'promo_uses', 'nft_gifts', 'nft_owners', 'inventory',
-  'crypto_holdings', 'crypto_coins', 'banners', 'promotions',
-  'cases', 'trades', 'referrals',
-];
+const SUPABASE_URL = "https://kafivvwxqulxmkpyqinz.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImthZml2dnd4cXVseG1rcHlxaW56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyOTgyNDIsImV4cCI6MjA4OTg3NDI0Mn0.HD_Gxn5UIVxov0-7U4aVhtYXhGvYTsVqLlycE5ctBpg";
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: false },
+});
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: 'Server config error' });
-  }
-
-  const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
-  const { table, data, returning, operation, match } = req.body || {};
-
-  if (!ALLOWED_TABLES.includes(table)) {
-    return res.status(400).json({ error: 'Table not allowed' });
-  }
-
-  // SELECT operation via service_role (щоб RLS не блокував anon)
-  if (operation === 'select') {
-    let query = supabaseAdmin.from(table).select(data?.columns || '*');
-    if (data?.filters) {
-      for (const f of data.filters) {
-        if (f.op === 'eq')    query = query.eq(f.col, f.value);
-        if (f.op === 'ilike') query = query.ilike(f.col, f.value);
-        if (f.op === 'in')    query = query.in(f.col, f.value);
-        if (f.op === 'neq')   query = query.neq(f.col, f.value);
-      }
+// ✅ БЕЗОПАСНЫЙ INSERT через серверный эндпоинт (как в site2)
+// Все INSERT-операции идут через /api/submit с service_role ключом,
+// чтобы RLS не блокировал анонимные вставки.
+export async function secureInsert(table: string, data: unknown): Promise<void> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, data }),
+  });
+  if (!res.ok) {
+    let msg = "Insert failed";
+    try {
+      const err = await res.json();
+      msg = err.error || msg;
+    } catch {
+      // ignore
     }
-    if (data?.order) query = query.order(data.order.col, { ascending: data.order.asc !== false });
-    if (data?.limit) query = query.limit(data.limit);
-    if (data?.single) {
-      const { data: row, error } = await query.maybeSingle();
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ ok: true, data: row });
-    }
-    const { data: rows, error } = await query;
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ ok: true, data: rows });
+    throw new Error(msg);
   }
+}
 
-  // UPSERT operation
-  if (operation === 'upsert') {
-    const { data: rows, error } = await supabaseAdmin.from(table).upsert(data?.values, { onConflict: data?.onConflict }).select();
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ ok: true, data: rows });
+// Same as secureInsert, but returns the inserted rows (uses .select() server-side).
+export async function secureInsertReturning<T = unknown>(
+  table: string,
+  data: unknown,
+): Promise<T[]> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, data, returning: true }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Insert failed");
+  return (json.data ?? []) as T[];
+}
+
+// ✅ БЕЗОПАСНЫЙ UPDATE через серверный эндпоинт с service_role ключом.
+// match — объект вида { id: "abc" } (условие WHERE)
+export async function secureUpdate(
+  table: string,
+  data: unknown,
+  match: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, data, match, operation: "update" }),
+  });
+  if (!res.ok) {
+    let msg = "Update failed";
+    try {
+      const err = await res.json();
+      msg = err.error || msg;
+    } catch {
+      // ignore
+    }
+    throw new Error(msg);
   }
+}
 
-  // DELETE operation via service_role
-  if (operation === 'delete') {
-    if (!match || typeof match !== 'object' || Object.keys(match).length === 0) {
-      return res.status(400).json({ error: 'match is required for delete' });
-    }
-    let query = supabaseAdmin.from(table).delete();
-    for (const [col, val] of Object.entries(match)) {
-      query = query.eq(col, val);
-    }
-    const { error } = await query;
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ ok: true });
+// ✅ БЕЗОПАСНЫЙ DELETE через серверный эндпоинт с service_role ключом.
+export async function secureDelete(
+  table: string,
+  match: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ table, match, operation: "delete" }),
+  });
+  if (!res.ok) {
+    let msg = "Delete failed";
+    try {
+      const err = await res.json();
+      msg = err.error || msg;
+    } catch { /* ignore */ }
+    throw new Error(msg);
   }
+}
 
-  // UPDATE operation via service_role
-  if (operation === 'update') {
-    if (!match || typeof match !== 'object' || Object.keys(match).length === 0) {
-      return res.status(400).json({ error: 'match is required for update' });
-    }
-    let query = supabaseAdmin.from(table).update(data);
-    for (const [col, val] of Object.entries(match)) {
-      query = query.eq(col, val);
-    }
-    if (returning) {
-      const { data: rows, error } = await query.select();
-      if (error) return res.status(500).json({ error: error.message });
-      return res.status(200).json({ ok: true, data: rows });
-    }
-    const { error } = await query;
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ ok: true });
+export type DbUser = {
+  id: number;
+  username: string;
+  telegram_id: string | null;
+  avatar_url: string | null;
+  role: "player" | "admin" | "mayor";
+  theme: string;
+  registered_at: string;
+  is_banned: boolean;
+  balance: number | null;
+  password: string | null;
+  owned_themes: string[] | null;
+  owned_gifts: unknown;
+  favorites: string[] | null;
+  referral_code: string | null;
+  referred_by: string | null;
+  rare_balance: number | null;
+};
+
+export type CaseDef = {
+  id: string;
+  slug: string;
+  name: string;
+  price: number;
+  image_url: string | null;
+  min_price: number;
+  max_price: number;
+  rarity_bias: number;
+  sort_order: number;
+  active: boolean;
+};
+
+export type Trade = {
+  id: string;
+  from_nick: string;
+  to_nick: string;
+  nft_owner_id: string | null;
+  amount_cr: number;
+  amount_rc: number;
+  fee_cr: number;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  message: string | null;
+  created_at: string;
+  resolved_at: string | null;
+};
+
+export type NftGift = {
+  id: string;
+  name: string;
+  price: number;
+  image_url: string;
+  created_at: string;
+  sold: boolean;
+};
+
+export type NftOwner = {
+  id: string;
+  owner_nick: string;
+  nft_id: string;
+  acquired_at: string;
+};
+
+// ✅ БЕЗОПАСНЫЙ SELECT через service_role — обходит RLS
+export async function secureSelect<T = unknown>(
+  table: string,
+  opts?: {
+    columns?: string;
+    filters?: { col: string; op: "eq" | "ilike" | "in" | "neq"; value: unknown }[];
+    order?: { col: string; asc?: boolean };
+    limit?: number;
+    single?: boolean;
   }
+): Promise<T[]> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      table,
+      operation: "select",
+      data: opts || {},
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Select failed");
+  if (opts?.single) return json.data ? [json.data as T] : [];
+  return (json.data ?? []) as T[];
+}
 
-  // INSERT operation (default)
-  let query = supabaseAdmin.from(table).insert(data);
-  if (returning) {
-    const { data: rows, error } = await query.select();
-    if (error) return res.status(500).json({ error: error.message });
-    return res.status(200).json({ ok: true, data: rows });
-  }
-
-  const { error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-  return res.status(200).json({ ok: true });
+export async function secureSelectOne<T = unknown>(
+  table: string,
+  opts?: Parameters<typeof secureSelect>[1]
+): Promise<T | null> {
+  const rows = await secureSelect<T>(table, { ...opts, single: true, limit: 1 });
+  return rows[0] ?? null;
 }
