@@ -1,6 +1,6 @@
 import { useAuth } from "@/lib/auth";
 import { RequireAuth, PageHeader } from "@/components/RequireAuth";
-import { supabase, DbUser, secureInsert, secureInsertReturning } from "@/lib/supabase";
+import { supabase, secureSelect, secureUpdate, secureDelete, DbUser, secureInsert, secureInsertReturning } from "@/lib/supabase";
 import { useState, useEffect, useCallback } from "react";
 import {
   Shield, Users, Megaphone, Plus, Trash2, Save, X,
@@ -149,7 +149,8 @@ function UsersTab({ isMayor, currentUser }: { isMayor: boolean; currentUser: DbU
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("users").select("*").order("id");
+    const data = await secureSelect("users", { order: { col: "id", asc: true } });
+    const error = null;
     if (error) { setMsg("Помилка завантаження: " + error.message); setMsgErr(true); }
     setUsers((data as DbUser[]) ?? []);
     setLoading(false);
@@ -167,21 +168,21 @@ function UsersTab({ isMayor, currentUser }: { isMayor: boolean; currentUser: DbU
   };
 
   const grantAdmin = async (username: string) => {
-    const { error } = await supabase.from("users").update({ role: "admin" }).eq("username", username);
+    await secureUpdate("users", { role: "admin" }, { username }); const error = null;
     if (error) { showMsg("Помилка: " + error.message, true); return; }
     showMsg(`Роль admin видана @${username}`);
     load();
   };
 
   const revokeAdmin = async (username: string) => {
-    const { error } = await supabase.from("users").update({ role: "player" }).eq("username", username);
+    await secureUpdate("users", { role: "player" }, { username }); const error = null;
     if (error) { showMsg("Помилка: " + error.message, true); return; }
     showMsg(`Роль admin знята з @${username}`);
     load();
   };
 
   const toggleBan = async (u: DbUser) => {
-    const { error } = await supabase.from("users").update({ is_banned: !u.is_banned }).eq("id", u.id);
+    await secureUpdate("users", { is_banned: !u.is_banned }, { id: u.id }); const error = null;
     if (error) { showMsg("Помилка: " + error.message, true); return; }
     showMsg(`${u.is_banned ? "Розбанений" : "Забанений"}: @${u.username}`);
     load();
@@ -368,14 +369,14 @@ function BannersTab() {
   };
 
   const toggleActive = async (b: Banner) => {
-    const { error } = await supabase.from("banners").update({ active: !b.active }).eq("id", b.id);
+    await secureUpdate("banners", { active: !b.active }, { id: b.id }); const error = null;
     if (error) { showMsg("Помилка: " + error.message, true); return; }
     load();
   };
 
   const remove = async (id: string) => {
     setDeletingId(id);
-    const { error } = await supabase.from("banners").delete().eq("id", id);
+    await secureDelete("banners", { id }); const error = null;
     setDeletingId(null);
     if (error) {
       showMsg("Помилка видалення: " + error.message, true);
@@ -582,14 +583,14 @@ function PromotionsTab() {
   };
 
   const toggleActive = async (p: Promo) => {
-    const { error } = await supabase.from("promotions").update({ active: !p.active }).eq("id", p.id);
+    await secureUpdate("promotions", { active: !p.active }, { id: p.id }); const error = null;
     if (error) { showMsg("Помилка: " + error.message, true); return; }
     load();
   };
 
   const remove = async (id: string) => {
     setDeletingId(id);
-    const { error } = await supabase.from("promotions").delete().eq("id", id);
+    await secureDelete("promotions", { id }); const error = null;
     setDeletingId(null);
     if (error) {
       showMsg("Помилка видалення: " + error.message, true);
@@ -809,14 +810,14 @@ function PromoCodesTab() {
   };
 
   const toggleActive = async (c: PromoCode) => {
-    const { error } = await supabase.from("promo_codes").update({ active: !c.active }).eq("id", c.id);
+    await secureUpdate("promo_codes", { active: !c.active }, { id: c.id }); const error = null;
     if (error) { showMsg("Помилка: " + error.message, true); return; }
     load();
   };
 
   const remove = async (id: string) => {
     setDeletingId(id);
-    const { error } = await supabase.from("promo_codes").delete().eq("id", id);
+    await secureDelete("promo_codes", { id }); const error = null;
     setDeletingId(null);
     if (error) { showMsg("Помилка видалення: " + error.message, true); return; }
     load();
@@ -1006,7 +1007,7 @@ function CryptoTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("crypto_coins").select("*").order("created_at", { ascending: false });
+    const data = await secureSelect("crypto_coins", { order: { col: "created_at", asc: false } });
     setCoins((data ?? []) as CryptoCoinAdmin[]); setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -1016,7 +1017,7 @@ function CryptoTab() {
       setMsg("Заповніть symbol, name, image_url, price"); setMsgErr(true); return;
     }
     if (editingId) {
-      const { error } = await supabase.from("crypto_coins").update(form).eq("id", editingId);
+      await secureUpdate("crypto_coins", form, { id: editingId }); const error = null;
       if (error) { setMsg(error.message); setMsgErr(true); return; }
     } else {
       let error: { message: string } | null = null;
@@ -1027,10 +1028,10 @@ function CryptoTab() {
   };
   const remove = async (id: string) => {
     if (!confirm("Видалити монету?")) return;
-    await supabase.from("crypto_coins").delete().eq("id", id); load();
+    await secureDelete("crypto_coins", { id }); load();
   };
   const toggle = async (c: CryptoCoinAdmin) => {
-    await supabase.from("crypto_coins").update({ active: !c.active }).eq("id", c.id); load();
+    await secureUpdate("crypto_coins", { active: !c.active }, { id: c.id }); load();
   };
   const editStart = (c: CryptoCoinAdmin) => {
     setEditingId(c.id); setCreating(true);
