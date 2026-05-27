@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { supabase, DbUser, secureInsertReturning } from "./supabase";
+import { supabase, DbUser, secureInsertReturning, secureSelect, secureSelectOne, secureUpdate } from "./supabase";
 
 type AuthCtx = {
   user: DbUser | null;
@@ -20,17 +20,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadUser = useCallback(async (id: number) => {
-    const { data, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-    if (error || !data) {
-      localStorage.removeItem(STORAGE_KEY);
-      setUser(null);
-      return;
+    try {
+      const data = await secureSelectOne<DbUser>("users", {
+        filters: [{ col: "id", op: "eq", value: id }],
+      });
+      if (!data) { localStorage.removeItem(STORAGE_KEY); setUser(null); return; }
+      setUser(data);
+    } catch {
+      localStorage.removeItem(STORAGE_KEY); setUser(null);
     }
-    setUser(data as DbUser);
   }, []);
 
   useEffect(() => {
@@ -54,36 +52,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, loadUser]);
 
   const login = async (username: string, password: string) => {
-    const { data, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("username", username)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
+    const data = await secureSelectOne<DbUser>("users", {
+      filters: [{ col: "username", op: "eq", value: username }],
+    });
     if (!data) throw new Error("Пользователь не найден");
     if (data.is_banned) throw new Error("Аккаунт заблокирован");
     if ((data.password ?? "") !== password) throw new Error("Неверный пароль");
     localStorage.setItem(STORAGE_KEY, String(data.id));
-    setUser(data as DbUser);
+    setUser(data);
   };
 
   const register = async (username: string, password: string, refCode?: string) => {
-    const { data: existing } = await supabase
-      .from("users")
-      .select("id")
-      .eq("username", username)
-      .maybeSingle();
+    const existing = await secureSelectOne("users", {
+      columns: "id",
+      filters: [{ col: "username", op: "eq", value: username }],
+    });
     if (existing) throw new Error("Имя занято");
 
     let referrerNick: string | null = null;
     const code = (refCode ?? "").trim().toUpperCase();
     if (code) {
-      const { data: ref } = await supabase
-        .from("users")
-        .select("username")
-        .eq("referral_code", code)
-        .maybeSingle();
-      if (ref) referrerNick = (ref as any).username;
+      const ref = await secureSelectOne<{ username: string }>("users", {
+        columns: "username",
+        filters: [{ col: "referral_code", op: "eq", value: code }],
+      });
+      if (ref) referrerNick = ref.username;
     }
 
     const myCode = (username + Date.now().toString(36))
@@ -111,12 +104,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           referred_nick: username,
           reward_paid: true,
         });
-        const { data: refUser } = await supabase
-          .from("users").select("id, balance").eq("username", referrerNick).maybeSingle();
+        const refUser = await secureSelectOne<{ id: number; balance: number }>("users", {
+          columns: "id, balance",
+          filters: [{ col: "username", op: "eq", value: referrerNick }],
+        });
         if (refUser) {
-          await supabase.from("users")
-            .update({ balance: ((refUser as any).balance ?? 0) + 1200 })
-            .eq("id", (refUser as any).id);
+          await secureUpdate("users", { balance: (refUser.balance ?? 0) + 1200 }, { id: refUser.id });
         }
       } catch (e) {
         console.warn("referral reward failed:", e);
@@ -135,14 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateBalance = async (delta: number) => {
     if (!user) return;
     const newBal = (user.balance ?? 0) + delta;
-    const { data, error } = await supabase
-      .from("users")
-      .update({ balance: newBal })
-      .eq("id", user.id)
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
-    setUser(data as DbUser);
+    await secureUpdate("users", { balance: newBal }, { id: user.id });
+    setUser({ ...user, balance: newBal });
   };
 
   return (
