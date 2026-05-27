@@ -149,3 +149,37 @@ export type NftOwner = {
   nft_id: string;
   acquired_at: string;
 };
+
+// ✅ БЕЗОПАСНЫЙ SELECT через service_role — обходит RLS
+export async function secureSelect<T = unknown>(
+  table: string,
+  opts?: {
+    columns?: string;
+    filters?: { col: string; op: "eq" | "ilike" | "in" | "neq"; value: unknown }[];
+    order?: { col: string; asc?: boolean };
+    limit?: number;
+    single?: boolean;
+  }
+): Promise<T[]> {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      table,
+      operation: "select",
+      data: opts || {},
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "Select failed");
+  if (opts?.single) return json.data ? [json.data as T] : [];
+  return (json.data ?? []) as T[];
+}
+
+export async function secureSelectOne<T = unknown>(
+  table: string,
+  opts?: Parameters<typeof secureSelect>[1]
+): Promise<T | null> {
+  const rows = await secureSelect<T>(table, { ...opts, single: true, limit: 1 });
+  return rows[0] ?? null;
+}
