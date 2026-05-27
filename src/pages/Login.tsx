@@ -79,10 +79,19 @@ function LoginPage() {
           {busy ? "..." : mode === "login" ? "Увійти" : "Створити акаунт"}
         </button>
 
-        <button type="button" onClick={() => { setMode(m => m === "login" ? "register" : "login"); setErr(""); }}
-          className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition">
-          {mode === "login" ? "Немає акаунту? Зареєструватись" : "Вже є акаунт? Увійти"}
-        </button>
+        <div className="mt-3 flex items-center justify-center gap-3">
+          {mode === "register" && (
+            <button type="button" onClick={() => { setMode("login"); setErr(""); }}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition px-3 py-2 rounded-xl"
+              style={{ background: "oklch(0.18 0 0)", border: "1px solid oklch(0.25 0 0)" }}>
+              ← Назад
+            </button>
+          )}
+          <button type="button" onClick={() => { setMode(m => m === "login" ? "register" : "login"); setErr(""); }}
+            className="text-xs text-muted-foreground hover:text-foreground transition">
+            {mode === "login" ? "Немає акаунту? Зареєструватись" : "Вже є акаунт? Увійти"}
+          </button>
+        </div>
       </form>
     </div>
   );
