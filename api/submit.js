@@ -26,6 +26,36 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Table not allowed' });
   }
 
+  // SELECT operation via service_role (щоб RLS не блокував anon)
+  if (operation === 'select') {
+    let query = supabaseAdmin.from(table).select(data?.columns || '*');
+    if (data?.filters) {
+      for (const f of data.filters) {
+        if (f.op === 'eq')    query = query.eq(f.col, f.value);
+        if (f.op === 'ilike') query = query.ilike(f.col, f.value);
+        if (f.op === 'in')    query = query.in(f.col, f.value);
+        if (f.op === 'neq')   query = query.neq(f.col, f.value);
+      }
+    }
+    if (data?.order) query = query.order(data.order.col, { ascending: data.order.asc !== false });
+    if (data?.limit) query = query.limit(data.limit);
+    if (data?.single) {
+      const { data: row, error } = await query.maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true, data: row });
+    }
+    const { data: rows, error } = await query;
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true, data: rows });
+  }
+
+  // UPSERT operation
+  if (operation === 'upsert') {
+    const { data: rows, error } = await supabaseAdmin.from(table).upsert(data?.values, { onConflict: data?.onConflict }).select();
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true, data: rows });
+  }
+
   // DELETE operation via service_role
   if (operation === 'delete') {
     if (!match || typeof match !== 'object' || Object.keys(match).length === 0) {
