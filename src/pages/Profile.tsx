@@ -2,7 +2,7 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
 import { useUserNfts } from "@/lib/nft";
 import { supabase } from "@/lib/supabase";
-import { Wallet, Calendar, LogOut, Star, Award, Settings, Palette, Check } from "lucide-react";
+import { Wallet, Calendar, LogOut, Star, Award, Settings, Palette, Check, Gift, Copy, Link2 } from "lucide-react";
 import { useState } from "react";
 
 const THEMES: { key: string; label: string; swatch: string }[] = [
@@ -18,8 +18,9 @@ const THEMES: { key: string; label: string; swatch: string }[] = [
 function ProfilePage() {
   const { user, logout, refresh } = useAuth();
   const { items } = useUserNfts(user?.username);
-  const [activeTab, setActiveTab] = useState<"stats" | "nfts" | "themes" | "account">("stats");
+  const [activeTab, setActiveTab] = useState<"stats" | "nfts" | "referral" | "themes" | "account">("stats");
   const [savingTheme, setSavingTheme] = useState<string | null>(null);
+  const [copied, setCopied] = useState<"code" | "link" | null>(null);
 
   if (!user) return null;
 
@@ -27,16 +28,26 @@ function ProfilePage() {
   const avatarLetter = user.username[0]?.toUpperCase() ?? "?";
 
   const roleColor = user.role === "admin" || user.role === "mayor"
-    ? "var(--primary)"
-    : "var(--muted-foreground)";
-
+    ? "var(--primary)" : "var(--muted-foreground)";
   const roleLabel =
     user.role === "mayor" ? "Мер" :
-    user.role === "admin" ? "Адміністратор" :
-    "Гравець";
+    user.role === "admin" ? "Адміністратор" : "Гравець";
 
   const joinDate = new Date(user.registered_at);
   const daysAgo = Math.floor((Date.now() - joinDate.getTime()) / 86400000);
+
+  const refCode = (user as any).referral_code || "—";
+  const refLink = typeof window !== "undefined" && refCode !== "—"
+    ? `${window.location.origin}/login?ref=${refCode}`
+    : "";
+
+  const copy = async (what: "code" | "link", text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(what);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {/* noop */}
+  };
 
   return (
     <div>
@@ -45,52 +56,34 @@ function ProfilePage() {
           0%,100% { box-shadow: 0 0 20px oklch(from var(--primary) l c h / 0.4), 0 0 40px oklch(from var(--primary) l c h / 0.2); }
           50%      { box-shadow: 0 0 35px oklch(from var(--primary) l c h / 0.65), 0 0 65px oklch(from var(--primary) l c h / 0.35); }
         }
-        @keyframes profileSlideIn {
-          from { opacity: 0; transform: translateY(20px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes statCount {
-          from { opacity: 0; transform: scale(0.8); }
-          to   { opacity: 1; transform: scale(1); }
-        }
+        @keyframes profileSlideIn { from {opacity:0; transform:translateY(20px);} to {opacity:1; transform:translateY(0);} }
+        @keyframes statCount      { from {opacity:0; transform:scale(0.8);} to {opacity:1; transform:scale(1);} }
         .profile-animate { animation: profileSlideIn 0.4s ease-out; }
         .stat-animate    { animation: statCount 0.5s ease-out; }
       `}</style>
 
       <PageHeader title="Особистий кабінет" subtitle="Твоя статистика та акаунт" />
 
-      {/* Hero card — uses CSS vars, no hardcoded green */}
       <div className="glass-strong mb-4 rounded-3xl p-6 profile-animate">
         <div className="flex items-start gap-5">
-          {/* Avatar */}
           <div className="relative flex-shrink-0">
-            <div
-              className="flex h-20 w-20 items-center justify-center rounded-2xl text-3xl font-bold overflow-hidden"
-              style={{
-                background: "var(--gradient-primary)",
-                color: "var(--primary-foreground)",
-                animation: "avatarGlow 3s ease-in-out infinite",
-              }}
-            >
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl text-3xl font-bold overflow-hidden"
+              style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", animation: "avatarGlow 3s ease-in-out infinite" }}>
               {user.avatar_url
                 ? <img src={user.avatar_url} alt="" className="h-20 w-20 object-cover" />
-                : avatarLetter
-              }
+                : avatarLetter}
             </div>
-            {/* Online badge */}
             <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full border-2 flex items-center justify-center"
               style={{ background: "var(--primary)", borderColor: "var(--background)" }}>
               <div className="h-2 w-2 rounded-full" style={{ background: "var(--primary-foreground)" }} />
             </div>
           </div>
 
-          {/* Info */}
           <div className="flex-1 min-w-0">
             <div className="text-2xl font-bold truncate">{user.username}</div>
             <div className="mt-1 text-sm font-semibold" style={{ color: roleColor }}>{roleLabel}</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {user.is_banned ? "Заблокований" : "Активний"}
-              {" · тема: "}{user.theme}
+              {user.is_banned ? "Заблокований" : "Активний"}{" · тема: "}{user.theme}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
               З нами {daysAgo} {daysAgo === 1 ? "день" : daysAgo < 5 ? "дні" : "днів"}
@@ -103,29 +96,49 @@ function ProfilePage() {
           </button>
         </div>
 
-        {/* Balance bar */}
-        <div className="mt-5 rounded-2xl p-4 glass">
-          <div className="flex items-end justify-between">
-            <div>
-              <div className="text-xs uppercase text-muted-foreground mb-1 flex items-center gap-1">
-                <Wallet className="h-3 w-3" /> Баланс
+        {/* Balance + Referral quick button row */}
+        <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
+          <div className="rounded-2xl p-4 glass">
+            <div className="flex items-end justify-between">
+              <div>
+                <div className="text-xs uppercase text-muted-foreground mb-1 flex items-center gap-1">
+                  <Wallet className="h-3 w-3" /> Баланс
+                </div>
+                <div className="font-mono text-3xl font-bold tabular-nums glow-text" style={{ color: "var(--primary)" }}>
+                  {(user.balance ?? 0).toLocaleString()}
+                </div>
               </div>
-              <div className="font-mono text-3xl font-bold tabular-nums glow-text" style={{ color: "var(--primary)" }}>
-                {(user.balance ?? 0).toLocaleString()}
+              <div className="text-right">
+                <div className="text-lg font-bold text-primary">CR</div>
+                <div className="text-xs text-muted-foreground">Crypto Credits</div>
               </div>
-            </div>
-            <div className="text-right">
-              <div className="text-lg font-bold text-primary">CR</div>
-              <div className="text-xs text-muted-foreground">Crypto Credits</div>
             </div>
           </div>
+
+          {/* === REFERRAL QUICK BUTTON === */}
+          <button
+            onClick={() => {
+              if (refCode === "—") { setActiveTab("referral"); return; }
+              copy("code", refCode);
+              setActiveTab("referral");
+            }}
+            className="glass-strong rounded-2xl px-5 py-4 flex flex-col items-center justify-center gap-1 hover:scale-[1.02] transition group"
+            style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
+            title="Скопіювати реферальний код">
+            <div className="flex items-center gap-2">
+              {copied === "code"
+                ? <><Check className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-wider">Скопійовано!</span></>
+                : <><Gift className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-wider">Реферал</span></>}
+            </div>
+            <div className="font-mono text-lg font-bold tracking-wider">{refCode}</div>
+          </button>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="glass mb-4 flex rounded-2xl p-1 gap-1 overflow-x-auto">
-        {(["stats", "nfts", "themes", "account"] as const).map(key => {
-          const labels = { stats: "Статистика", nfts: "NFT", themes: "Теми", account: "Акаунт" };
+        {(["stats", "nfts", "referral", "themes", "account"] as const).map(key => {
+          const labels = { stats: "Статистика", nfts: "NFT", referral: "Реферали", themes: "Теми", account: "Акаунт" };
           return (
             <button key={key} onClick={() => setActiveTab(key)}
               className="flex-1 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium transition-all"
@@ -140,7 +153,6 @@ function ProfilePage() {
         })}
       </div>
 
-      {/* STATS */}
       {activeTab === "stats" && (
         <div className="grid gap-3 sm:grid-cols-2">
           <StatCard icon={<Wallet className="h-5 w-5" />} label="Баланс"
@@ -159,7 +171,6 @@ function ProfilePage() {
         </div>
       )}
 
-      {/* NFTS */}
       {activeTab === "nfts" && (
         <div>
           {items.length === 0 ? (
@@ -186,7 +197,61 @@ function ProfilePage() {
         </div>
       )}
 
-      {/* THEMES */}
+      {/* === REFERRAL TAB === */}
+      {activeTab === "referral" && (
+        <div className="space-y-3">
+          <div className="glass-strong rounded-2xl p-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <Gift className="h-4 w-4 text-primary" /> Твоя реферальна програма
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Поділись своїм кодом або посиланням з другом. Коли він зареєструється — ти отримаєш <span className="font-bold text-primary">+1200 CR</span>.
+            </p>
+
+            <div className="space-y-2">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Реферальний код</div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-xl bg-input px-4 py-3 font-mono text-xl font-bold text-center tracking-widest text-primary">
+                  {refCode}
+                </div>
+                <button onClick={() => copy("code", refCode)} disabled={refCode === "—"}
+                  className="btn-primary rounded-xl px-4 py-3 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40">
+                  {copied === "code" ? <><Check className="h-3.5 w-3.5" />OK</> : <><Copy className="h-3.5 w-3.5" />Копіювати</>}
+                </button>
+              </div>
+
+              {refLink && (
+                <>
+                  <div className="mt-4 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Реферальне посилання</div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 rounded-xl bg-input px-4 py-3 font-mono text-xs truncate">{refLink}</div>
+                    <button onClick={() => copy("link", refLink)}
+                      className="glass rounded-xl px-4 py-3 text-xs font-bold flex items-center gap-1.5">
+                      {copied === "link" ? <><Check className="h-3.5 w-3.5" />OK</> : <><Link2 className="h-3.5 w-3.5" />Копіювати</>}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="glass rounded-2xl p-4 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <Gift className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="font-semibold text-foreground mb-1">Як це працює:</div>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  <li>Скопіюй код або посилання вище</li>
+                  <li>Надішли другу</li>
+                  <li>Друг реєструється і вводить твій код</li>
+                  <li>Ти отримуєш +1200 CR одразу 🎉</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === "themes" && (
         <div className="glass-strong rounded-2xl p-5">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
@@ -213,11 +278,7 @@ function ProfilePage() {
                   className={`relative overflow-hidden rounded-2xl p-3 text-left transition hover:scale-[1.03] ${
                     active ? "ring-2 ring-offset-2 shadow-[var(--shadow-glow)]" : "ring-1 ring-border"
                   }`}
-                  style={{
-                    background: t.swatch,
-                    ringColor: "var(--primary)",
-                    ringOffsetColor: "var(--background)",
-                  }}>
+                  style={{ background: t.swatch }}>
                   <div className="h-14 w-full rounded-lg bg-black/25" />
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-xs font-bold text-white/90 drop-shadow">{t.label}</span>
@@ -234,7 +295,6 @@ function ProfilePage() {
         </div>
       )}
 
-      {/* ACCOUNT */}
       {activeTab === "account" && (
         <div className="glass rounded-2xl p-4 text-sm">
           <div className="mb-3 font-semibold flex items-center gap-2">
@@ -243,6 +303,8 @@ function ProfilePage() {
           <div className="space-y-2">
             <Row k="ID" v={String(user.id)} />
             <Row k="Нікнейм" v={user.username} />
+            <Row k="Реф-код" v={refCode} highlight />
+            <Row k="Запрошений" v={(user as any).referred_by || "—"} />
             <Row k="Telegram ID" v={user.telegram_id ?? "—"} />
             <Row k="Роль" v={roleLabel} highlight={user.role !== "player"} />
             <Row k="Заблокований" v={user.is_banned ? "Так" : "Ні"} />
