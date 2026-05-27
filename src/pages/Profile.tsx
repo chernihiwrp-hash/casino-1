@@ -1,7 +1,7 @@
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
 import { useUserNfts } from "@/lib/nft";
-import { supabase } from "@/lib/supabase";
+import { supabase, secureUpdate, secureSelect, secureUpdate, secureSelect } from from "@/lib/supabase";
 import { Wallet, Calendar, LogOut, Star, Award, Settings, Palette, Check, Gift, Copy, Link2 } from "lucide-react";
 import { useState } from "react";
 
@@ -200,39 +200,57 @@ function ProfilePage() {
       {/* === REFERRAL TAB === */}
       {activeTab === "referral" && (
         <div className="space-y-3">
-          <div className="glass-strong rounded-2xl p-5">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <Gift className="h-4 w-4 text-primary" /> Твоя реферальна програма
-            </div>
-            <p className="mb-4 text-xs text-muted-foreground">
-              Поділись своїм кодом або посиланням з другом. Коли він зареєструється — ти отримаєш <span className="font-bold text-primary">+1200 CR</span>.
-            </p>
+          {/* Головна картка реферального */}
+          <div className="relative overflow-hidden rounded-2xl p-5"
+            style={{ background: "linear-gradient(135deg, oklch(0.22 0.08 145 / 0.6), oklch(0.15 0.04 145 / 0.3))", border: "1px solid oklch(0.55 0.18 145 / 0.35)", boxShadow: "0 0 40px oklch(0.55 0.18 145 / 0.1)" }}>
+            <div className="absolute top-0 right-0 w-40 h-40 opacity-10 pointer-events-none"
+              style={{ background: "radial-gradient(circle, oklch(0.72 0.22 145), transparent)", transform: "translate(30%, -30%)" }} />
 
-            <div className="space-y-2">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Реферальний код</div>
+            <div className="flex items-center gap-2.5 mb-3 relative">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{ background: "oklch(0.55 0.18 145 / 0.2)", border: "1px solid oklch(0.55 0.18 145 / 0.4)" }}>
+                <Gift className="h-4.5 w-4.5" style={{ color: "oklch(0.72 0.22 145)" }} />
+              </div>
+              <div>
+                <p className="text-sm font-black text-white">Реферальна програма</p>
+                <p className="text-[10px]" style={{ color: "oklch(0.72 0.22 145)" }}>+1200 CR за кожного друга</p>
+              </div>
+            </div>
+
+            {/* Код */}
+            <div className="relative mb-3">
+              <div className="text-[9px] font-black uppercase tracking-[0.2em] mb-1.5" style={{ color: "oklch(0.55 0.18 145)" }}>Твій код</div>
               <div className="flex items-center gap-2">
-                <div className="flex-1 rounded-xl bg-input px-4 py-3 font-mono text-xl font-bold text-center tracking-widest text-primary">
+                <div className="flex-1 rounded-xl px-4 py-3.5 font-mono text-2xl font-black text-center tracking-[0.3em]"
+                  style={{ background: "oklch(0.12 0.03 145)", border: "1px solid oklch(0.55 0.18 145 / 0.3)", color: "oklch(0.72 0.22 145)", letterSpacing: "0.3em" }}>
                   {refCode}
                 </div>
                 <button onClick={() => copy("code", refCode)} disabled={refCode === "—"}
-                  className="btn-primary rounded-xl px-4 py-3 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40">
-                  {copied === "code" ? <><Check className="h-3.5 w-3.5" />OK</> : <><Copy className="h-3.5 w-3.5" />Копіювати</>}
+                  className="flex flex-col items-center justify-center gap-1 px-4 py-3.5 rounded-xl transition-all active:scale-90 disabled:opacity-40"
+                  style={{ background: copied === "code" ? "oklch(0.55 0.18 145 / 0.3)" : "oklch(0.55 0.18 145 / 0.15)", border: "1px solid oklch(0.55 0.18 145 / 0.4)", minWidth: 64 }}>
+                  {copied === "code"
+                    ? <><Check className="h-4 w-4" style={{ color: "oklch(0.72 0.22 145)" }} /><span className="text-[9px] font-bold" style={{ color: "oklch(0.72 0.22 145)" }}>Ок!</span></>
+                    : <><Copy className="h-4 w-4" style={{ color: "oklch(0.72 0.22 145)" }} /><span className="text-[9px] font-bold" style={{ color: "oklch(0.72 0.22 145)" }}>Копія</span></>}
                 </button>
               </div>
-
-              {refLink && (
-                <>
-                  <div className="mt-4 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Реферальне посилання</div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 rounded-xl bg-input px-4 py-3 font-mono text-xs truncate">{refLink}</div>
-                    <button onClick={() => copy("link", refLink)}
-                      className="glass rounded-xl px-4 py-3 text-xs font-bold flex items-center gap-1.5">
-                      {copied === "link" ? <><Check className="h-3.5 w-3.5" />OK</> : <><Link2 className="h-3.5 w-3.5" />Копіювати</>}
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
+
+            {refLink && (
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-[0.2em] mb-1.5" style={{ color: "oklch(0.55 0.18 145)" }}>Посилання</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 rounded-xl px-3 py-2.5 font-mono text-[10px] truncate"
+                    style={{ background: "oklch(0.12 0.03 145)", border: "1px solid oklch(0.35 0.05 145 / 0.3)", color: "oklch(0.6 0.1 145)" }}>
+                    {refLink}
+                  </div>
+                  <button onClick={() => copy("link", refLink)}
+                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl transition-all active:scale-90 text-xs font-bold"
+                    style={{ background: "oklch(0.55 0.18 145 / 0.12)", border: "1px solid oklch(0.55 0.18 145 / 0.3)", color: "oklch(0.72 0.22 145)" }}>
+                    {copied === "link" ? <Check className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="glass rounded-2xl p-4 text-xs text-muted-foreground">
@@ -271,7 +289,7 @@ function ProfilePage() {
                     setSavingTheme(t.key);
                     try {
                       document.documentElement.setAttribute("data-theme", t.key);
-                      await supabase.from("users").update({ theme: t.key }).eq("id", user.id);
+                      await secureUpdate("users", { theme: t.key }, { id: user.id });
                       await refresh();
                     } finally { setSavingTheme(null); }
                   }}
