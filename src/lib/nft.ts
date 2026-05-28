@@ -5,7 +5,7 @@ export function useNftPool() {
   const [pool, setPool] = useState<NftGift[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    secureSelect("nft_gifts", { order: { col: "price", asc: true } }).then(data => ({ data, error: null })).catch(e => ({ data: null, error: e }))
+    secureSelect<NftGift>("nft_gifts", { order: { col: "price", asc: true } }).then(data => ({ data, error: null })).catch(e => ({ data: null, error: e }))
       .then(({ data }) => { setPool((data as NftGift[]) ?? []); setLoading(false); });
   }, []);
   return { pool, loading };
@@ -18,17 +18,21 @@ export function useUserNfts(username: string | undefined) {
   const reload = useCallback(async () => {
     if (!username) { setItems([]); return; }
     setLoading(true);
-    const { data } = await supabase
-      .from("nft_owners")
-      .select("id, nft_id, acquired_at, nft_gifts(*)")
-      .eq("owner_nick", username)
-      .order("acquired_at", { ascending: false });
-    const mapped = (data ?? []).map((r: any) => ({
-      ...(r.nft_gifts as NftGift),
-      ownerRowId: r.id,
-      acquired_at: r.acquired_at,
-    }));
-    setItems(mapped);
+    try {
+      const owners = await secureSelect<{ id: string; nft_id: string; acquired_at: string }>(
+        "nft_owners",
+        { filters: [{ col: "owner_nick", op: "eq", value: username }], order: { col: "acquired_at", asc: false } }
+      );
+      if (owners.length === 0) { setItems([]); setLoading(false); return; }
+      const nftIds = owners.map((o) => o.nft_id);
+      const gifts = await secureSelect<NftGift>("nft_gifts", { filters: [{ col: "id", op: "in", value: nftIds }] });
+      const giftMap = Object.fromEntries(gifts.map((g) => [String(g.id), g]));
+      setItems(
+        owners
+          .filter((o) => giftMap[String(o.nft_id)])
+          .map((o) => ({ ...giftMap[String(o.nft_id)], ownerRowId: o.id, acquired_at: o.acquired_at }))
+      );
+    } catch (e) { console.error("useUserNfts:", e); }
     setLoading(false);
   }, [username]);
 
