@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/RequireAuth";
-import { supabase, secureSelect, secureUpdate, secureInsert, secureUpdate, secureDelete } from "@/lib/supabase";
+import { supabase, secureSelect, secureUpdate, secureInsert, secureDelete } from "@/lib/supabase";
 import type { CryptoCoin, CryptoHolding } from "@/lib/crypto-types";
 import { TrendingUp, TrendingDown, ArrowDownUp, Wallet, Search, Activity, AlertTriangle, X, CheckCircle2, XCircle } from "lucide-react";
 
@@ -392,10 +392,11 @@ export default function ExchangePage() {
   // ── Load coins (each user gets own local history) ────────────────────────────
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("crypto_coins").select("*").eq("active", true)
-        .order("market_cap", { ascending: false });
-      const list = (data ?? []) as CryptoCoin[];
+      const data = await secureSelect<CryptoCoin>("crypto_coins", {
+        filters: [{ col: "active", op: "eq", value: true }],
+        order: { col: "market_cap", asc: false },
+      });
+      const list = data ?? [];
       setCoins(list.map((c) => ({ ...c, history: genHistory(c.price, c.volatility || 1) })));
       setSelectedId((p) => p ?? list[0]?.id ?? null);
     })();
