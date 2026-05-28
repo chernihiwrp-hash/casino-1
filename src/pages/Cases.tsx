@@ -31,8 +31,8 @@ const CASES = [
     price: 1000,
     image: CASE_IMAGE_MID,
     color: "#4ADE80",
-    minPrice: 500,
-    maxPrice: 2000,
+    minPrice: 300,
+    maxPrice: 3000,
     Icon: Star,
   },
   {
@@ -250,24 +250,6 @@ function CaseCard({ c, pool, balance, onOpen }: {
         <div>
           <p className="text-sm font-black text-white">{c.name}</p>
           <p className="text-[11px] mt-0.5" style={{ color: `${c.color}cc` }}>{c.desc}</p>
-        </div>
-
-        {/* NFT preview */}
-        <div className="flex gap-1.5">
-          {casePool.slice(0, 5).map((n) => (
-            <img key={n.id} src={n.image_url} alt={n.name}
-              className="h-9 w-9 rounded-lg object-cover"
-              style={{ border: `1px solid ${c.color}30` }} />
-          ))}
-          {casePool.length > 5 && (
-            <div className="h-9 w-9 rounded-lg flex items-center justify-center text-[9px] font-bold"
-              style={{ background: `${c.color}10`, border: `1px solid ${c.color}25`, color: c.color }}>
-              +{casePool.length - 5}
-            </div>
-          )}
-          {casePool.length === 0 && (
-            <span className="text-[10px] text-muted-foreground">NFT не додані</span>
-          )}
         </div>
 
         {/* Button */}
