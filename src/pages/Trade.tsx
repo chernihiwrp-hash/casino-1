@@ -127,7 +127,7 @@ export default function TradePage() {
         ? t.nft_owner_ids
         : (t.nft_owner_id ? [t.nft_owner_id] : []);
       for (const id of ids) {
-        await secureUpdate("nft_owners", { owner_nick: user.username }, { id });
+        await secureUpdate("nft_owners", { owner_nick: user.username.toLowerCase().trim() }, { id });
       }
 
       await secureUpdate("trades", { status: "accepted", resolved_at: new Date().toISOString() }, { id: t.id });
