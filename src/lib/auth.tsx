@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from "react";
 import { supabase, DbUser, secureInsertReturning, secureSelect, secureSelectOne, secureUpdate } from "./supabase";
 
 type AuthCtx = {
@@ -18,6 +18,12 @@ const STORAGE_KEY = "casino_user_id";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<DbUser | null>(null);
   const [loading, setLoading] = useState(true);
+  // Ref зберігає актуальний user, щоб updateBalance не використовував застарілий баланс
+  // (інакше при швидких послідовних викликах списання/нарахування губиться).
+  const userRef = useRef<DbUser | null>(null);
+  useEffect(() => { userRef.current = user; }, [user]);
+  // Черга, щоб виклики updateBalance виконувались послідовно, без гонок.
+  const balanceQueue = useRef<Promise<void>>(Promise.resolve());
 
   const loadUser = useCallback(async (id: number) => {
     try {
@@ -126,10 +132,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updateBalance = async (delta: number) => {
-    if (!user) return;
-    const newBal = (user.balance ?? 0) + delta;
-    await secureUpdate("users", { balance: newBal }, { id: user.id });
-    setUser({ ...user, balance: newBal });
+    // Послідовна черга + читання актуального значення з ref, щоб уникнути
+    // дюпу/втрати списань через застарілі замикання (наприклад у Rocket cashout).
+    const run = balanceQueue.current.then(async () => {
+      const u = userRef.current;
+      if (!u) return;
+      const newBal = (u.balance ?? 0) + delta;
+      await secureUpdate("users", { balance: newBal }, { id: u.id });
+      const updated = { ...u, balance: newBal };
+      userRef.current = updated;
+      setUser(updated);
+    });
+    balanceQueue.current = run.catch(() => {});
+    await run;
   };
 
   return (
