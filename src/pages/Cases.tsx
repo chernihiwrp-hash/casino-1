@@ -6,7 +6,7 @@ import { Package, Sparkles, Star, Crown, ChevronLeft } from "lucide-react";
 import type { NftGift } from "@/lib/supabase";
 import { setNavLocked } from "@/lib/lock";
 
-// ─── КАРТИНКИ КЕЙСІВ ────────────────────────────────────────────────────────
+// ─── КАРТИНКИ КЕЙСІВ — вставте посилання замість null ───────────────────────
 const CASE_IMAGE_BUM:  string | null = "https://i.ibb.co/j9R5xFbX/pngwing-com-51.png";
 const CASE_IMAGE_MID:  string | null = "https://i.ibb.co/2B0Zy3G/pngwing-com-52.png";
 const CASE_IMAGE_RICH: string | null = "https://i.ibb.co/B511JY2L/pngwing-com-53.png";
@@ -27,22 +27,22 @@ const CASES = [
   {
     id: "mid",
     name: "Кейс Середнячка",
-    desc: "Більше NFT, більше шансів",
-    price: 3500,
+    desc: "Середні NFT за норм ціну",
+    price: 1500,
     image: CASE_IMAGE_MID,
     color: "#4ADE80",
     minPrice: 300,
-    maxPrice: 8000,
+    maxPrice: 5000,
     Icon: Star,
   },
   {
     id: "rich",
     name: "Кейс Мажора",
     desc: "Елітні NFT для обраних",
-    price: 75000,
+    price: 40000,
     image: CASE_IMAGE_RICH,
     color: "#FBBF24",
-    minPrice: 8000,
+    minPrice: 5000,
     maxPrice: Infinity,
     Icon: Crown,
   },
@@ -55,7 +55,7 @@ function CaseOpener({
   c, pool, user, updateBalance, onClose,
 }: {
   c: CaseDef; pool: NftGift[];
-  user: any; updateBalance: (d: number) => Promise<any>;
+  user: any; updateBalance: (d: number) => Promise<void>;
   onClose: () => void;
 }) {
   const casePool = pool.filter(n => n.price >= c.minPrice && n.price < c.maxPrice);
@@ -63,7 +63,7 @@ function CaseOpener({
   const [reel, setReel]       = useState<NftGift[]>([]);
   const [won, setWon]         = useState<NftGift | null>(null);
   const [msg, setMsg]         = useState("");
-  const reelRef = useRef<HTMLDivElement | null>(null);
+  const reelRef = useRef<HTMLDivElement>(null);
   const { Icon } = c;
 
   const openCase = async () => {
@@ -105,82 +105,104 @@ function CaseOpener({
   };
 
   return (
-    // ⬇️ ОСНОВНЕ ВИПРАВЛЕННЯ: фікс на весь екран + СКРОЛ + padding під header/safe-area
-    <div className="fixed inset-0 z-50 bg-[#0a0a0f] overflow-y-auto overscroll-contain">
-      {/* Header (sticky щоб кнопка завжди була видима) */}
-      <div
-        className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-[#0a0a0f]/95 backdrop-blur border-b border-white/5"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
-      >
-        <button
-          onClick={onClose}
-          className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center active:scale-95 transition-transform"
-          aria-label="Назад"
-        >
-          <ChevronLeft className="w-5 h-5 text-white" />
+    <div className="fixed inset-0 z-40 flex flex-col overflow-y-auto"
+      style={{ background: "#0a0a0f" }}>
+
+      {/* Header */}
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 pt-12 pb-3"
+        style={{ background: "#0a0a0f", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <button onClick={onClose} disabled={opening}
+          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition active:scale-90 disabled:opacity-40"
+          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <ChevronLeft className="w-5 h-5" />
         </button>
-        <div className="flex-1 min-w-0">
-          <div className="text-white font-black text-base truncate">{c.name}</div>
-          <div className="text-white/50 text-xs">{c.price} CR · {casePool.length} NFT</div>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: `${c.color}20`, border: `1px solid ${c.color}40` }}>
+            <Icon className="w-3.5 h-3.5" style={{ color: c.color }} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-white truncate">{c.name}</p>
+            <p className="text-[10px]" style={{ color: c.color }}>{c.price} CR · {casePool.length} NFT</p>
+          </div>
         </div>
       </div>
 
-      <div className="px-4 py-5 pb-32 space-y-5">
+      <div className="flex-1 px-4 py-4 space-y-4">
         {/* Reel */}
-        <div className="relative overflow-hidden h-32 rounded-2xl bg-white/[0.03] border border-white/10">
-          <div className="absolute left-1/2 top-0 bottom-0 w-[2px] -translate-x-1/2 bg-yellow-400 z-10" />
+        <div className="relative h-32 rounded-2xl overflow-hidden"
+          style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${c.color}30`,
+            boxShadow: `0 0 24px ${c.color}15` }}>
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px z-10"
+            style={{ background: c.color, boxShadow: `0 0 16px ${c.color}` }} />
+          <div className="absolute inset-y-0 left-0 w-16 z-10"
+            style={{ background: "linear-gradient(90deg,#0a0a0f,transparent)" }} />
+          <div className="absolute inset-y-0 right-0 w-16 z-10"
+            style={{ background: "linear-gradient(-90deg,#0a0a0f,transparent)" }} />
+
           {reel.length > 0 ? (
-            <div ref={reelRef} className="flex h-full will-change-transform">
+            <div ref={reelRef} className="flex h-full" style={{ transform: "translateX(0)" }}>
               {reel.map((n, i) => (
-                <div key={i} className="w-32 h-32 shrink-0 flex flex-col items-center justify-center border-r border-white/5 p-2">
-                  <div className="text-3xl">🎁</div>
-                  <div className="text-[10px] text-white/60 mt-1">{n.price}</div>
+                <div key={i} className="flex h-full w-32 shrink-0 flex-col items-center justify-center gap-1 p-2"
+                  style={{ borderRight: `1px solid ${c.color}15` }}>
+                  <img src={n.image_url} alt={n.name} className="h-16 w-16 rounded-xl object-cover" loading="lazy" />
+                  <div className="text-[9px] font-mono" style={{ color: c.color }}>{n.price}</div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="h-full flex items-center justify-center text-white/40 text-sm">
-              Натисни «Відкрити»
+            <div className="flex h-full items-center justify-center gap-2 text-muted-foreground text-sm">
+              <Package className="h-5 w-5 opacity-40" /> Натисни «Відкрити»
             </div>
           )}
         </div>
 
         {/* Won */}
         {won && !opening && (
-          <div className="rounded-2xl p-5 text-center" style={{ background: `${c.color}15`, border: `1px solid ${c.color}50` }}>
-            <Sparkles className="w-6 h-6 mx-auto mb-2" style={{ color: c.color }} />
-            <div className="text-white/60 text-xs uppercase tracking-wider">Дроп!</div>
-            <div className="text-white font-black text-lg mt-1">{won.name}</div>
-            <div className="text-sm mt-1" style={{ color: c.color }}>{won.price} CR</div>
+          <div className="rounded-2xl p-4 flex items-center gap-4"
+            style={{ background: `${c.color}10`, border: `1px solid ${c.color}30` }}>
+            <img src={won.image_url} alt={won.name}
+              className="h-16 w-16 rounded-xl object-cover shrink-0"
+              style={{ border: `2px solid ${c.color}`, boxShadow: `0 0 16px ${c.color}50` }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: c.color }}>Дроп!</div>
+              <div className="text-base font-black text-white truncate">{won.name}</div>
+              <div className="text-sm font-mono mt-0.5" style={{ color: c.color }}>{won.price} CR</div>
+            </div>
+            <Sparkles className="w-5 h-5 shrink-0" style={{ color: c.color }} />
           </div>
         )}
 
         {msg && (
-          <div className="text-center text-sm text-white/70">{msg}</div>
+          <div className="rounded-xl px-4 py-2.5 text-sm text-center text-muted-foreground"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            {msg}
+          </div>
         )}
 
         {/* Open btn */}
-        <button
-          onClick={openCase}
+        <button onClick={openCase}
           disabled={opening || (user?.balance ?? 0) < c.price || !casePool.length}
-          className="w-full py-4 rounded-2xl font-black uppercase tracking-wide text-black disabled:opacity-40 active:scale-[0.98] transition-transform"
-          style={{ background: c.color }}
-        >
+          className="w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-40"
+          style={{ background: `${c.color}18`, border: `1.5px solid ${c.color}50`, color: c.color }}>
           {opening ? "Відкриваємо..." : `Відкрити · ${c.price} CR`}
         </button>
 
         {/* NFT пул */}
         {casePool.length > 0 && (
           <div>
-            <div className="text-white/50 text-xs uppercase tracking-wider mb-3">
+            <p className="text-[9px] font-black uppercase tracking-widest mb-2"
+              style={{ color: "rgba(255,255,255,0.25)" }}>
               Можливі NFT ({casePool.length})
-            </div>
-            <div className="grid grid-cols-3 gap-2">
+            </p>
+            <div className="grid grid-cols-5 gap-1.5">
               {casePool.map((n) => (
-                <div key={n.id} className="aspect-square rounded-xl bg-white/[0.03] border border-white/5 flex flex-col items-center justify-center p-2">
-                  <div className="text-2xl">🎁</div>
-                  <div className="text-[10px] text-white/60 mt-1 truncate w-full text-center">{n.name}</div>
-                  <div className="text-[10px] font-bold mt-0.5" style={{ color: c.color }}>{n.price}</div>
+                <div key={n.id} className="rounded-xl overflow-hidden"
+                  style={{ background: `${c.color}08`, border: `1px solid ${c.color}20` }}>
+                  <img src={n.image_url} alt={n.name} className="w-full aspect-square object-cover" loading="lazy" />
+                  <div className="px-1 py-0.5 text-[8px] font-mono text-center truncate" style={{ color: c.color }}>
+                    {n.price}
+                  </div>
                 </div>
               ))}
             </div>
@@ -200,39 +222,42 @@ function CaseCard({ c, pool, balance, onOpen }: {
   const { Icon } = c;
 
   return (
-    <div className="rounded-2xl overflow-hidden bg-white/[0.03] border border-white/5">
+    <div className="rounded-2xl overflow-hidden flex flex-col"
+      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+
       {/* Картинка */}
-      <div className="relative aspect-square flex items-center justify-center" style={{ background: `${c.color}10` }}>
+      <div className="relative flex items-center justify-center py-6"
+        style={{ background: `radial-gradient(ellipse 70% 60% at 50% 50%, ${c.color}12, transparent)`,
+          borderBottom: `1px solid ${c.color}20` }}>
         {c.image ? (
-          <img src={c.image} alt={c.name} className="w-full h-full object-contain p-4" />
+          <img src={c.image} alt={c.name} className="h-32 w-32 object-contain"
+            style={{ filter: `drop-shadow(0 0 20px ${c.color}60)` }} />
         ) : (
-          <div className="w-24 h-24 rounded-2xl flex items-center justify-center" style={{ background: `${c.color}25` }}>
-            <Icon className="w-12 h-12" style={{ color: c.color }} />
+          <div className="h-32 w-32 rounded-2xl flex flex-col items-center justify-center gap-2"
+            style={{ background: `${c.color}10`, border: `1.5px dashed ${c.color}35` }}>
+            <Icon className="h-12 w-12" style={{ color: c.color, opacity: 0.5 }} />
           </div>
         )}
-        <div className="absolute top-2 right-2 px-2 py-1 rounded-lg text-[11px] font-black"
-             style={{ background: `${c.color}20`, color: c.color, border: `1px solid ${c.color}40` }}>
+        {/* Price badge */}
+        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-black"
+          style={{ background: `${c.color}20`, border: `1px solid ${c.color}40`, color: c.color }}>
           {c.price} CR
         </div>
       </div>
 
       {/* Info */}
-      <div className="p-4 space-y-3">
+      <div className="p-4 flex flex-col gap-3">
         <div>
-          <div className="text-white font-black text-base">{c.name}</div>
-          <div className="text-white/50 text-xs mt-0.5">{c.desc}</div>
+          <p className="text-sm font-black text-white">{c.name}</p>
+          <p className="text-[11px] mt-0.5" style={{ color: `${c.color}cc` }}>{c.desc}</p>
         </div>
 
-        <button
-          onClick={() => onOpen(c)}
-          disabled={!canOpen}
+        {/* Button */}
+        <button onClick={() => onOpen(c)} disabled={!canOpen}
           className="w-full py-3 rounded-xl text-[13px] font-black uppercase tracking-wide transition-all active:scale-[0.97] disabled:opacity-35"
-          style={{
-            background: canOpen ? `${c.color}18` : "transparent",
+          style={{ background: canOpen ? `${c.color}18` : "transparent",
             border: `1px solid ${canOpen ? c.color + "50" : "rgba(255,255,255,0.1)"}`,
-            color: canOpen ? c.color : "rgba(255,255,255,0.3)",
-          }}
-        >
+            color: canOpen ? c.color : "rgba(255,255,255,0.3)" }}>
           {!casePool.length ? "Скоро" : `Відкрити · ${c.price} CR`}
         </button>
       </div>
@@ -251,28 +276,26 @@ function CasesPage() {
   if (selected) {
     return (
       <CaseOpener
-        c={selected}
-        pool={pool}
-        user={user}
-        updateBalance={updateBalance}
+        c={selected} pool={pool}
+        user={user} updateBalance={updateBalance}
         onClose={() => setSelected(null)}
       />
     );
   }
 
   return (
-    <div className="px-4 pb-24 space-y-4">
-      <PageHeader title="Кейси" subtitle="Відкривай та збирай NFT" />
+    <div>
+      <PageHeader title="NFT Кейси" subtitle="Відкрий кейс — отримай NFT" />
 
       {loading ? (
-        <div className="text-center text-white/50 py-12">Завантаження...</div>
+        <div className="flex items-center justify-center py-20 text-muted-foreground text-sm gap-2">
+          <Package className="h-5 w-5 animate-pulse" /> Завантаження...
+        </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="flex flex-col gap-3">
           {CASES.map((c) => (
             <CaseCard
-              key={c.id}
-              c={c}
-              pool={pool}
+              key={c.id} c={c} pool={pool}
               balance={user?.balance ?? 0}
               onOpen={setSelected}
             />
@@ -280,9 +303,9 @@ function CasesPage() {
         </div>
       )}
 
-      <div className="text-center text-white/30 text-xs pt-4">
+      <p className="mt-5 mb-2 text-center text-[10px] text-muted-foreground">
         Шанс рідкісних NFT обернено пропорційний ціні
-      </div>
+      </p>
     </div>
   );
 }
