@@ -7,9 +7,9 @@ import type { NftGift } from "@/lib/supabase";
 import { setNavLocked } from "@/lib/lock";
 
 // ─── КАРТИНКИ КЕЙСІВ — вставте посилання замість null ───────────────────────
-const CASE_IMAGE_BUM:  string | null = null;  // 👈 "https://..."
-const CASE_IMAGE_MID:  string | null = null;  // 👈 "https://..."
-const CASE_IMAGE_RICH: string | null = null;  // 👈 "https://..."
+const CASE_IMAGE_BUM:  string | null = https://i.ibb.co/j9R5xFbX/pngwing-com-51.png;
+const CASE_IMAGE_MID:  string | null = https://i.ibb.co/2B0Zy3G/pngwing-com-52.png;
+const CASE_IMAGE_RICH: string | null = https://i.ibb.co/B511JY2L/pngwing-com-53.png;
 // ────────────────────────────────────────────────────────────────────────────
 
 const CASES = [
@@ -28,21 +28,21 @@ const CASES = [
     id: "mid",
     name: "Кейс Середнячка",
     desc: "Середні NFT за норм ціну",
-    price: 1000,
+    price: 1500,
     image: CASE_IMAGE_MID,
     color: "#4ADE80",
     minPrice: 300,
-    maxPrice: 3000,
+    maxPrice: 5000,
     Icon: Star,
   },
   {
     id: "rich",
     name: "Кейс Мажора",
     desc: "Елітні NFT для обраних",
-    price: 2000,
+    price: 40000,
     image: CASE_IMAGE_RICH,
     color: "#FBBF24",
-    minPrice: 2000,
+    minPrice: 5000,
     maxPrice: Infinity,
     Icon: Crown,
   },
