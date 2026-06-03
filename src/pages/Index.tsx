@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
+import { secureSelect } from "@/lib/supabase";
 import { Rocket, Dices, CircleDot, Package, Sparkles, Wallet, ArrowRight, Shield, ChevronLeft, ChevronRight, ExternalLink, Ticket } from "lucide-react";
 import { useEffect, useState, useCallback, useRef } from "react";
 
@@ -195,12 +195,12 @@ function Index() {
   }, [loading, user, navigate]);
 
   useEffect(() => {
-    supabase
-      .from("banners")
-      .select("*")
-      .eq("active", true)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setBanners((data as Banner[]) ?? []));
+    secureSelect<Banner>("banners", {
+      filters: [{ col: "active", op: "eq", value: true }],
+      order: { col: "created_at", asc: false },
+    })
+      .then((data) => setBanners(data ?? []))
+      .catch((e) => console.warn("banners load failed:", e));
   }, []);
 
   if (loading || !user) return null;
