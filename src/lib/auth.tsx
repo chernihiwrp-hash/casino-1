@@ -108,7 +108,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await secureInsertReturning("referrals", {
           referrer_nick: referrerNick,
           referred_nick: username,
-          reward_paid: true,
         });
         const refUser = await secureSelectOne<{ id: number; balance: number }>("users", {
           columns: "id, balance",
@@ -118,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await secureUpdate("users", { balance: (refUser.balance ?? 0) + 1200 }, { id: refUser.id });
         }
       } catch (e) {
-        console.warn("referral reward failed:", e);
+        console.error("referral reward failed:", e);
       }
     }
 
