@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
+import { supabase, secureSelect } from "@/lib/supabase";
 import { PageHeader } from "@/components/RequireAuth";
 import { Ticket, CheckCircle, AlertTriangle, Sparkles, History, Loader2 } from "lucide-react";
 
@@ -34,13 +34,18 @@ export default function PromoPage() {
   const loadHistory = useCallback(async () => {
     if (!user) return;
     setLoadingHist(true);
-    const { data } = await supabase
-      .from("promo_code_redemptions")
-      .select("id, promo_code_id, amount, redeemed_at, promo_codes(code)")
-      .eq("user_id", user.id)
-      .order("redeemed_at", { ascending: false })
-      .limit(20);
-    setHistory((data as unknown as Redemption[]) ?? []);
+    try {
+      const data = await secureSelect<Redemption>("promo_code_redemptions", {
+        columns: "id, promo_code_id, amount, redeemed_at, promo_codes(code)",
+        filters: [{ col: "user_id", op: "eq", value: user.id }],
+        order: { col: "redeemed_at", asc: false },
+        limit: 20,
+      });
+      setHistory(data ?? []);
+    } catch (e) {
+      console.warn("promo history load failed:", e);
+      setHistory([]);
+    }
     setLoadingHist(false);
   }, [user]);
 
