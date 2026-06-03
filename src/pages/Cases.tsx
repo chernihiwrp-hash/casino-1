@@ -7,9 +7,12 @@ import type { NftGift } from "@/lib/supabase";
 import { setNavLocked } from "@/lib/lock";
 
 // ─── КАРТИНКИ КЕЙСІВ — вставте посилання замість null ───────────────────────
-const CASE_IMAGE_BUM:  string | null = "https://i.ibb.co/j9R5xFbX/pngwing-com-51.png";
-const CASE_IMAGE_MID:  string | null = "https://i.ibb.co/2B0Zy3G/pngwing-com-52.png";
-const CASE_IMAGE_RICH: string | null = "https://i.ibb.co/B511JY2L/pngwing-com-53.png";
+import bumImg from "@/assets/cases/bum.png";
+import midImg from "@/assets/cases/mid.png";
+import richImg from "@/assets/cases/rich.png";
+const CASE_IMAGE_BUM:  string | null = bumImg;
+const CASE_IMAGE_MID:  string | null = midImg;
+const CASE_IMAGE_RICH: string | null = richImg;
 // ────────────────────────────────────────────────────────────────────────────
 
 const CASES = [
