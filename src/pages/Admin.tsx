@@ -330,12 +330,14 @@ function BannersTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("banners")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) showMsg("Помилка завантаження: " + error.message, true);
-    setBanners((data as Banner[]) ?? []);
+    try {
+      const data = await secureSelect<Banner>("banners", {
+        order: { col: "created_at", asc: false },
+      });
+      setBanners(data ?? []);
+    } catch (e) {
+      showMsg("Помилка завантаження: " + (e as Error).message, true);
+    }
     setLoading(false);
   }, []);
 
@@ -546,12 +548,14 @@ function PromotionsTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("promotions")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) showMsg("Помилка завантаження: " + error.message, true);
-    setPromos((data as Promo[]) ?? []);
+    try {
+      const data = await secureSelect<Promo>("promotions", {
+        order: { col: "created_at", asc: false },
+      });
+      setPromos(data ?? []);
+    } catch (e) {
+      showMsg("Помилка завантаження: " + (e as Error).message, true);
+    }
     setLoading(false);
   }, []);
 
@@ -764,12 +768,14 @@ function PromoCodesTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("promo_codes")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) showMsg("Помилка завантаження: " + error.message, true);
-    setCodes((data as PromoCode[]) ?? []);
+    try {
+      const data = await secureSelect<PromoCode>("promo_codes", {
+        order: { col: "created_at", asc: false },
+      });
+      setCodes(data ?? []);
+    } catch (e) {
+      showMsg("Помилка завантаження: " + (e as Error).message, true);
+    }
     setLoading(false);
   }, []);
 
